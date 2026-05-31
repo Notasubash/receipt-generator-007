@@ -17,7 +17,7 @@ import {
   Download, Trash2, Plus, IndianRupee
 } from 'lucide-react';
 
-const FLAT_TYPES = ['1BHK', '2BHK', '3BHK', '4BHK', 'Studio', 'Penthouse', 'Commercial'];
+const FLAT_TYPES = ['1BHK', '2BHK', '3BHK', '4BHK', 'Commercial'];
 
 export default function FlatDetailPage() {
   const { id } = useParams();

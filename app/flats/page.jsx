@@ -19,7 +19,7 @@ const EMPTY_FLAT = {
   floor: '', type: '', ownershipType: 'owner', notes: ''
 };
 
-const FLAT_TYPES = ['1BHK', '2BHK', '3BHK', '4BHK', 'Studio', 'Penthouse', 'Commercial'];
+const FLAT_TYPES = ['1BHK', '2BHK', '3BHK', '4BHK', 'Commercial'];
 
 export default function FlatsPage() {
   const { getFlats, addFlat, updateFlat, deleteFlat } = useFirestore();
