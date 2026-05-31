@@ -12,7 +12,7 @@ import Badge from '../../components/ui/Badge';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
-import { Plus, Building2, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Building2, Search, Pencil, Trash2, ChevronRight } from 'lucide-react';
 
 const EMPTY_FLAT = {
   flatNumber: '', ownerName: '',
@@ -96,10 +96,11 @@ export default function FlatsPage() {
   return (
     <ProtectedRoute>
       <Layout title="Flats">
-        <div className="max-w-5xl space-y-6">
+        <div className="max-w-5xl space-y-4 sm:space-y-6">
+
           {/* Header actions */}
-          <div className="flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
-            <div className="relative w-full sm:w-80">
+          <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
+            <div className="relative flex-1 sm:max-w-80">
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 value={search}
@@ -108,7 +109,7 @@ export default function FlatsPage() {
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none bg-white"
               />
             </div>
-            <Button onClick={openAdd} size="md">
+            <Button onClick={openAdd} size="md" className="flex items-center justify-center gap-2 w-full sm:w-auto">
               <Plus size={16} /> Add Flat
             </Button>
           </div>
@@ -126,74 +127,136 @@ export default function FlatsPage() {
               </button>
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-xs uppercase text-gray-400 tracking-wide border-b border-gray-100">
-                    <tr>
-                      <th className="text-left px-6 py-3">Flat No</th>
-                      <th className="text-left px-6 py-3">Owner</th>
-                      <th className="text-left px-6 py-3">Type</th>
-                      <th className="text-left px-6 py-3">Floor</th>
-                      <th className="text-left px-6 py-3">Ownership</th>
-                      <th className="text-right px-6 py-3">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((flat) => (
-                      <tr
-                        key={flat.id}
-                        onClick={() => router.push(`/flats/${flat.id}`)}
-                        className="border-t border-gray-50 hover:bg-[#fdf6ec]/50 transition-colors cursor-pointer"
+            <>
+              {/* ── Mobile: card list (hidden on md+) ── */}
+              <div className="flex flex-col gap-3 md:hidden">
+                {filtered.map((flat) => (
+                  <div
+                    key={flat.id}
+                    onClick={() => router.push(`/flats/${flat.id}`)}
+                    className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-4 active:bg-[#fdf6ec] transition-colors cursor-pointer"
+                  >
+                    {/* Avatar */}
+                    <div className="w-12 h-12 shrink-0 bg-[#1a1a2e] rounded-xl flex items-center justify-center">
+                      <span className="text-[#e2b04a] font-bold text-xs font-mono leading-tight text-center px-1">
+                        {flat.flatNumber}
+                      </span>
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-[#1a1a2e] text-sm">{flat.ownerName}</span>
+                        <Badge color={flat.ownershipType === 'owner' ? 'gold' : 'blue'} className="text-[10px]">
+                          {flat.ownershipType === 'owner' ? 'Owner' : 'Tenant'}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {flat.type && <Badge color="gray" className="text-[10px]">{flat.type}</Badge>}
+                        {flat.floor && <span className="text-xs text-gray-400">Floor {flat.floor}</span>}
+                        {flat.notes && (
+                          <span className="text-xs text-gray-400 truncate max-w-[140px]">{flat.notes}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => openEdit(flat)}
+                        className="p-2 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors"
+                        aria-label="Edit"
                       >
-                        <td className="px-6 py-3.5">
-                          <span className="font-mono font-bold text-[#1a1a2e] text-sm">{flat.flatNumber}</span>
-                        </td>
-                        <td className="px-6 py-3.5">
-                          <span className="font-medium text-[#1a1a2e]">{flat.ownerName}</span>
-                          {flat.notes && (
-                            <p className="text-xs text-gray-400 truncate max-w-[180px]">{flat.notes}</p>
-                          )}
-                        </td>
-                        <td className="px-6 py-3.5">
-                          {flat.type ? <Badge color="gray">{flat.type}</Badge> : <span className="text-gray-300">—</span>}
-                        </td>
-                        <td className="px-6 py-3.5 text-gray-500">
-                          {flat.floor ? `Floor ${flat.floor}` : <span className="text-gray-300">—</span>}
-                        </td>
-                        <td className="px-6 py-3.5">
-                          <Badge color={flat.ownershipType === 'owner' ? 'gold' : 'blue'}>
-                            {flat.ownershipType === 'owner' ? 'Owner' : 'Tenant'}
-                          </Badge>
-                        </td>
-                        <td className="px-6 py-3.5">
-                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => openEdit(flat)}
-                              className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors"
-                              title="Edit"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(flat)}
-                              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(flat)}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        aria-label="Delete"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                      <ChevronRight size={15} className="text-gray-300 ml-1" />
+                    </div>
+                  </div>
+                ))}
+
+                <p className="text-center text-xs text-gray-400 pt-1">
+                  {filtered.length} flat{filtered.length !== 1 ? 's' : ''}
+                  {search && ` matching "${search}"`}
+                </p>
+              </div>
+
+              {/* ── Desktop: table (hidden below md) ── */}
+              <div className="hidden md:block bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-xs uppercase text-gray-400 tracking-wide border-b border-gray-100">
+                      <tr>
+                        <th className="text-left px-6 py-3">Flat No</th>
+                        <th className="text-left px-6 py-3">Owner</th>
+                        <th className="text-left px-6 py-3">Type</th>
+                        <th className="text-left px-6 py-3">Floor</th>
+                        <th className="text-left px-6 py-3">Ownership</th>
+                        <th className="text-right px-6 py-3">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {filtered.map((flat) => (
+                        <tr
+                          key={flat.id}
+                          onClick={() => router.push(`/flats/${flat.id}`)}
+                          className="border-t border-gray-50 hover:bg-[#fdf6ec]/50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-6 py-3.5">
+                            <span className="font-mono font-bold text-[#1a1a2e] text-sm">{flat.flatNumber}</span>
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <span className="font-medium text-[#1a1a2e]">{flat.ownerName}</span>
+                            {flat.notes && (
+                              <p className="text-xs text-gray-400 truncate max-w-[180px]">{flat.notes}</p>
+                            )}
+                          </td>
+                          <td className="px-6 py-3.5">
+                            {flat.type ? <Badge color="gray">{flat.type}</Badge> : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-6 py-3.5 text-gray-500">
+                            {flat.floor ? `Floor ${flat.floor}` : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <Badge color={flat.ownershipType === 'owner' ? 'gold' : 'blue'}>
+                              {flat.ownershipType === 'owner' ? 'Owner' : 'Tenant'}
+                            </Badge>
+                          </td>
+                          <td className="px-6 py-3.5">
+                            <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={() => openEdit(flat)}
+                                className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(flat)}
+                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400">
+                  {filtered.length} flat{filtered.length !== 1 ? 's' : ''}
+                  {search && ` matching "${search}"`}
+                </div>
               </div>
-              <div className="px-6 py-3 border-t border-gray-50 text-xs text-gray-400">
-                {filtered.length} flat{filtered.length !== 1 ? 's' : ''}
-                {search && ` matching "${search}"`}
-              </div>
-            </div>
+            </>
           )}
         </div>
 
