@@ -1,6 +1,6 @@
 'use client';
 // app/receipts/new/page.jsx
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Layout from '../../../components/Layout';
@@ -51,7 +51,7 @@ function getNextReceiptNumber(existingReceipts) {
   return Math.max(max + 1, RECEIPT_START);
 }
 
-export default function NewReceiptPage() {
+function NewReceiptPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { getFlats, getReceipts, addReceipt, getSettings } = useFirestore();
@@ -577,5 +577,13 @@ export default function NewReceiptPage() {
         </div>
       </Layout>
     </ProtectedRoute>
+  );
+}
+
+export default function NewReceiptPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-gray-400 text-sm">Loading...</div>}>
+      <NewReceiptPageInner />
+    </Suspense>
   );
 }
