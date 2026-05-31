@@ -1,5 +1,4 @@
 'use client';
-// app/receipts/page.jsx
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Layout from '../../components/Layout';
@@ -8,9 +7,65 @@ import Button from '../../components/ui/Button';
 import { useFirestore } from '../../hooks/useFirestore';
 import { downloadReceiptPDF } from '../../lib/pdf';
 import toast from 'react-hot-toast';
-import { Plus, Search, Download, Trash2, FileText, AlertTriangle, X } from 'lucide-react';
+import { Plus, Search, Download, Trash2, FileText, AlertTriangle, X, Pencil } from 'lucide-react';
+import { format, parse } from 'date-fns';
 
-// ── Custom confirmation dialog ─────────────────────────────────────────────
+const MODES = ['Cash', 'UPI', 'NEFT', 'RTGS', 'Cheque', 'Bank Transfer', 'Online'];
+
+const toMonthInput = (str) => {
+  if (!str) return '';
+  try { return format(parse(str, 'MMMM yyyy', new Date()), 'yyyy-MM'); }
+  catch { return ''; }
+};
+
+const fromMonthInput = (str) => {
+  if (!str) return '';
+  try { return format(parse(str, 'yyyy-MM', new Date()), 'MMMM yyyy'); }
+  catch { return ''; }
+};
+
+function groupByReceiptNumber(receipts) {
+  const map = new Map();
+  receipts.forEach((r) => {
+    const key = r.receiptNumber || r.id;
+    if (!map.has(key)) {
+      map.set(key, {
+        receiptNumber: r.receiptNumber,
+        flatId: r.flatId,
+        flatNumber: r.flatNumber,
+        ownerName: r.ownerName,
+        modeOfPayment: r.modeOfPayment,
+        paymentDate: r.paymentDate,
+        remarks: r.remarks,
+        months: [],
+        totalAmount: 0,
+        ids: [],
+        rows: [],
+      });
+    }
+    const g = map.get(key);
+    if (r.month && !g.months.includes(r.month)) g.months.push(r.month);
+    g.totalAmount += Number(r.paidAmount || 0);
+    g.ids.push(r.id);
+    g.rows.push(r);
+  });
+  return Array.from(map.values());
+}
+
+function MonthBadges({ months }) {
+  if (!months || months.length === 0) return <span className="text-gray-400">—</span>;
+  if (months.length === 1) return <span className="text-gray-600">{months[0]}</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {months.map((m) => (
+        <span key={m} className="inline-block px-2 py-0.5 rounded-md bg-[#fdf0d5] text-[#b8861f] text-xs font-medium">
+          {m}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ConfirmDialog({ open, message, onConfirm, onCancel }) {
   if (!open) return null;
   return (
@@ -29,16 +84,10 @@ function ConfirmDialog({ open, message, onConfirm, onCancel }) {
           </button>
         </div>
         <div className="flex gap-2 px-6 pb-5 justify-end">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-          >
+          <button onClick={onCancel} className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors font-medium"
-          >
+          <button onClick={onConfirm} className="px-4 py-2 text-sm rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors font-medium">
             Delete
           </button>
         </div>
@@ -47,15 +96,154 @@ function ConfirmDialog({ open, message, onConfirm, onCancel }) {
   );
 }
 
+/**
+ * EditReceiptModal — works for both single and multi-month groups.
+ * Each month entry in the group gets its own editable row.
+ */
+function EditReceiptModal({ group, currency, onSave, onClose }) {
+  const [rows, setRows]     = useState(group.rows.map((r) => ({ ...r })));
+  const [saving, setSaving] = useState(false);
+
+  const setRow = (index, key, value) =>
+    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, [key]: value } : r)));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    for (const r of rows) {
+      if (!r.month || !r.paidAmount) {
+        toast.error('Month and amount are required for all entries');
+        return;
+      }
+    }
+    setSaving(true);
+    await onSave(rows);
+    setSaving(false);
+  };
+
+  const isMulti = rows.length > 1;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+          <div>
+            <h3 className="font-semibold text-[#1a1a2e]">Edit Receipt</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              #{group.receiptNumber} · {group.flatNumber} · {group.ownerName}
+              {isMulti && <span className="ml-1 text-[#b8861f]">· {rows.length} months</span>}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-500 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Scrollable entries */}
+        <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden">
+          <div className="overflow-y-auto px-6 py-4 space-y-5">
+            {rows.map((row, i) => (
+              <div
+                key={row.id}
+                className={isMulti ? 'pb-5 border-b border-gray-100 last:border-0 last:pb-0 space-y-3' : 'space-y-3'}
+              >
+                {isMulti && (
+                  <p className="text-xs font-semibold text-[#555577] uppercase tracking-wide">
+                    Entry {i + 1}
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">Month *</label>
+                    <input
+                      type="month"
+                      value={toMonthInput(row.month)}
+                      onChange={(e) => setRow(i, 'month', fromMonthInput(e.target.value))}
+                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none"
+                      required
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">Amount ({currency}) *</label>
+                    <input
+                      type="number"
+                      value={row.paidAmount || ''}
+                      onChange={(e) => setRow(i, 'paidAmount', e.target.value)}
+                      min="0"
+                      placeholder="1500"
+                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">Mode</label>
+                    <select
+                      value={row.modeOfPayment || 'Cash'}
+                      onChange={(e) => setRow(i, 'modeOfPayment', e.target.value)}
+                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none"
+                    >
+                      {MODES.map((m) => <option key={m}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">Payment Date</label>
+                    <input
+                      type="date"
+                      value={row.paymentDate || ''}
+                      onChange={(e) => setRow(i, 'paymentDate', e.target.value)}
+                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">Remarks</label>
+                  <input
+                    value={row.remarks || ''}
+                    onChange={(e) => setRow(i, 'remarks', e.target.value)}
+                    placeholder="Optional note..."
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 shrink-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm rounded-xl bg-[#1a1a2e] text-[#e2b04a] font-medium hover:bg-[#2a2a3e] disabled:opacity-50 transition-colors"
+            >
+              {saving ? 'Saving...' : 'Update Receipt'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function ReceiptsPage() {
-  const { getReceipts, deleteReceipt, getSettings, getFlats } = useFirestore();
-  const [receipts, setReceipts]     = useState([]);
-  const [filtered, setFiltered]     = useState([]);
-  const [flatsMap, setFlatsMap]     = useState({});
-  const [settings, setSettings]     = useState(null);
-  const [search, setSearch]         = useState('');
-  const [loading, setLoading]       = useState(true);
-  const [confirmId, setConfirmId]   = useState(null); // receipt id pending delete
+  const { getReceipts, deleteReceipt, updateReceipt, getSettings, getFlats } = useFirestore();
+  const [receipts, setReceipts]         = useState([]);
+  const [filtered, setFiltered]         = useState([]);
+  const [flatsMap, setFlatsMap]         = useState({});
+  const [settings, setSettings]         = useState(null);
+  const [search, setSearch]             = useState('');
+  const [loading, setLoading]           = useState(true);
+  const [confirmGroup, setConfirmGroup] = useState(null);
+  const [editGroup, setEditGroup]       = useState(null);
 
   const load = async () => {
     const [r, flats, s] = await Promise.all([getReceipts(), getFlats(), getSettings()]);
@@ -82,36 +270,60 @@ export default function ReceiptsPage() {
 
   const handleDeleteConfirmed = async () => {
     try {
-      await deleteReceipt(confirmId);
+      await Promise.all(confirmGroup.ids.map((id) => deleteReceipt(id)));
       toast.success('Receipt deleted');
       await load();
     } catch {
       toast.error('Failed to delete');
     } finally {
-      setConfirmId(null);
+      setConfirmGroup(null);
     }
   };
 
-  const handleDownload = (r) => {
-    const flat = flatsMap[r.flatId] || { flatNumber: r.flatNumber, ownerName: r.ownerName };
-    downloadReceiptPDF(settings || {}, flat, [r], `receipt_${r.receiptNumber}.pdf`);
+  const handleEditSave = async (rows) => {
+    try {
+      await Promise.all(rows.map((r) => updateReceipt(r.id, r)));
+      toast.success('Receipt updated');
+      setEditGroup(null);
+      await load();
+    } catch {
+      toast.error('Failed to update receipt');
+    }
+  };
+
+  const handleDownload = (group) => {
+    const flat = flatsMap[group.flatId] || { flatNumber: group.flatNumber, ownerName: group.ownerName };
+    downloadReceiptPDF(settings || {}, flat, group.rows, `receipt_${group.receiptNumber}.pdf`);
   };
 
   const currency = settings?.currency || '₹';
-  const total    = filtered.reduce((s, r) => s + Number(r.paidAmount || 0), 0);
+  const groups   = groupByReceiptNumber(filtered);
+  const total    = groups.reduce((s, g) => s + g.totalAmount, 0);
 
   return (
     <ProtectedRoute>
       <Layout title="Receipts">
         <div className="max-w-6xl space-y-6">
 
-          {/* Custom confirm dialog */}
           <ConfirmDialog
-            open={confirmId !== null}
-            message="This action cannot be undone. Are you sure you want to delete this receipt?"
+            open={confirmGroup !== null}
+            message={
+              confirmGroup?.ids.length > 1
+                ? `This will delete all ${confirmGroup.ids.length} month entries under receipt #${confirmGroup.receiptNumber}. This cannot be undone.`
+                : 'This action cannot be undone. Are you sure you want to delete this receipt?'
+            }
             onConfirm={handleDeleteConfirmed}
-            onCancel={() => setConfirmId(null)}
+            onCancel={() => setConfirmGroup(null)}
           />
+
+          {editGroup && (
+            <EditReceiptModal
+              group={editGroup}
+              currency={currency}
+              onSave={handleEditSave}
+              onClose={() => setEditGroup(null)}
+            />
+          )}
 
           {/* Header */}
           <div className="flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
@@ -130,10 +342,10 @@ export default function ReceiptsPage() {
           </div>
 
           {/* Summary */}
-          {filtered.length > 0 && (
+          {groups.length > 0 && (
             <div className="flex gap-4 text-sm">
               <span className="bg-white border border-gray-100 rounded-xl px-4 py-2 text-[#1a1a2e]">
-                <span className="font-semibold">{filtered.length}</span>
+                <span className="font-semibold">{groups.length}</span>
                 <span className="text-gray-400"> receipts</span>
               </span>
               <span className="bg-white border border-gray-100 rounded-xl px-4 py-2 text-[#1a1a2e]">
@@ -149,7 +361,7 @@ export default function ReceiptsPage() {
               <div className="flex justify-center py-20">
                 <div className="w-8 h-8 border-2 border-[#e2b04a] border-t-transparent rounded-full animate-spin" />
               </div>
-            ) : filtered.length === 0 ? (
+            ) : groups.length === 0 ? (
               <div className="py-16 text-center text-gray-400">
                 <FileText size={36} className="mx-auto mb-3 opacity-25" />
                 <p className="font-medium">No receipts found</p>
@@ -165,7 +377,7 @@ export default function ReceiptsPage() {
                       <th className="text-left px-6 py-3">Receipt No</th>
                       <th className="text-left px-6 py-3">Flat</th>
                       <th className="text-left px-6 py-3">Owner</th>
-                      <th className="text-left px-6 py-3">Month</th>
+                      <th className="text-left px-6 py-3">Month(s)</th>
                       <th className="text-right px-6 py-3">Amount</th>
                       <th className="text-left px-6 py-3">Mode</th>
                       <th className="text-left px-6 py-3">Date</th>
@@ -173,32 +385,39 @@ export default function ReceiptsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((r) => (
-                      <tr key={r.id} className="border-t border-gray-50 table-row-hover">
-                        <td className="px-6 py-3 font-mono text-xs text-gray-400">{r.receiptNumber}</td>
+                    {groups.map((g) => (
+                      <tr key={g.receiptNumber} className="border-t border-gray-50 hover:bg-[#fdf6ec]/40 transition-colors">
+                        <td className="px-6 py-3 font-mono text-xs text-gray-400">{g.receiptNumber}</td>
                         <td className="px-6 py-3">
-                          <Link href={`/flats/${r.flatId}`} className="font-semibold text-[#1a1a2e] hover:text-[#b8861f] font-mono">
-                            {r.flatNumber}
+                          <Link href={`/flats/${g.flatId}`} className="font-semibold text-[#1a1a2e] hover:text-[#b8861f] font-mono">
+                            {g.flatNumber}
                           </Link>
                         </td>
-                        <td className="px-6 py-3 text-gray-700">{r.ownerName}</td>
-                        <td className="px-6 py-3 text-gray-600">{r.month}</td>
+                        <td className="px-6 py-3 text-gray-700">{g.ownerName}</td>
+                        <td className="px-6 py-3"><MonthBadges months={g.months} /></td>
                         <td className="px-6 py-3 text-right font-semibold text-[#1a1a2e]">
-                          {currency}{Number(r.paidAmount || 0).toLocaleString('en-IN')}
+                          {currency}{g.totalAmount.toLocaleString('en-IN')}
                         </td>
-                        <td className="px-6 py-3 text-gray-500 capitalize">{r.modeOfPayment}</td>
-                        <td className="px-6 py-3 text-gray-400 text-xs">{r.paymentDate || '—'}</td>
+                        <td className="px-6 py-3 text-gray-500 capitalize">{g.modeOfPayment}</td>
+                        <td className="px-6 py-3 text-gray-400 text-xs">{g.paymentDate || '—'}</td>
                         <td className="px-6 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => handleDownload(r)}
+                              onClick={() => setEditGroup(g)}
+                              className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors"
+                              title="Edit"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleDownload(g)}
                               className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors"
                               title="Download PDF"
                             >
                               <Download size={13} />
                             </button>
                             <button
-                              onClick={() => setConfirmId(r.id)}
+                              onClick={() => setConfirmGroup(g)}
                               className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                               title="Delete"
                             >
