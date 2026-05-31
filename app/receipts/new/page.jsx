@@ -17,7 +17,7 @@ import { ArrowLeft, Plus, Trash2, FileDown, Save, CheckCircle, X, AlertTriangle 
 import { format, addMonths, parse } from 'date-fns';
 import { useAuth } from '../../../context/AuthContext';
 
-const RECEIPT_START = 1902;
+const RECEIPT_START = 1802;
 
 const MODES = ['Cash', 'UPI', 'NEFT', 'RTGS', 'Cheque', 'Bank Transfer', 'Online'];
 
