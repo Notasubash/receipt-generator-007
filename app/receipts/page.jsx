@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 import { Plus, Search, Download, Trash2, FileText, AlertTriangle, X, Pencil } from 'lucide-react';
 import { format, parse } from 'date-fns';
 
-const MODES = ['Cash', 'UPI', 'NEFT', 'RTGS', 'Cheque', 'Bank Transfer', 'Online'];
+const MODES = ['Cash', 'Bank Transfer'];
 
 const toMonthInput = (str) => {
   if (!str) return '';

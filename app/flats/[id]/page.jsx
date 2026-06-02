@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 const FLAT_TYPES = ['1BHK', '2BHK', '3BHK', '4BHK', 'Commercial'];
-const MODES = ['Cash', 'UPI', 'NEFT', 'RTGS', 'Cheque', 'Bank Transfer', 'Online'];
+const MODES = ['Cash', 'Bank Transfer'];
 
 const toMonthInput = (str) => {
   if (!str) return '';

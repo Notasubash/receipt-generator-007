@@ -135,6 +135,7 @@ export default function DashboardPage() {
                   <thead className="bg-gray-50 text-xs uppercase text-gray-400 tracking-wide">
                     <tr>
                       <th className="text-left px-6 py-3">Receipt No</th>
+                      <th className="text-left px-6 py-3">Date</th>
                       <th className="text-left px-6 py-3">Flat</th>
                       <th className="text-left px-6 py-3">Month</th>
                       <th className="text-right px-6 py-3">Amount</th>
@@ -145,6 +146,7 @@ export default function DashboardPage() {
                     {stats.receipts.slice(0, 8).map((r) => (
                       <tr key={r.id} className="border-t border-gray-50 table-row-hover">
                         <td className="px-6 py-3 font-mono text-xs text-gray-500">{r.receiptNumber}</td>
+                        <td className="px-6 py-3 text-gray-600">{r.paymentDate}</td>
                         <td className="px-6 py-3 font-medium text-[#1a1a2e]">{r.flatNumber} — {r.ownerName}</td>
                         <td className="px-6 py-3 text-gray-600">{r.month}</td>
                         <td className="px-6 py-3 text-right font-semibold text-[#1a1a2e]">

@@ -13,7 +13,7 @@ import { format, addMonths, parse } from 'date-fns';
 import { useAuth } from '../../../context/AuthContext';
 
 const RECEIPT_START = 1739;
-const MODES = ['Cash', 'UPI', 'NEFT', 'RTGS', 'Cheque', 'Bank Transfer', 'Online'];
+const MODES = ['Cash', 'Bank Transfer'];
 
 const toMonthInput = (str) => {
   if (!str) return '';
