@@ -7,9 +7,17 @@ import ProtectedRoute from '../../components/ProtectedRoute';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useAuth } from '../../context/AuthContext';
 import { Building2, FileText, IndianRupee, TrendingUp, Plus, ArrowRight, AlertCircle, X, ChevronRight } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parse } from 'date-fns';
+
+const formatDate = (str) => {
+  if (!str) return '—';
+  try { 
+    console.log(format(parse(str, 'yyyy-MM-dd', new Date()), 'dd-MM-yyyy'));return format(parse(str, 'yyyy-MM-dd', new Date()), 'dd-MM-yyyy'); }
+  catch { return str; }
+};
 
 export default function DashboardPage() {
+
   const { getDashboardStats, getSettings } = useFirestore();
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
@@ -146,7 +154,7 @@ export default function DashboardPage() {
                     {stats.receipts.slice(0, 8).map((r) => (
                       <tr key={r.id} className="border-t border-gray-50 table-row-hover">
                         <td className="px-6 py-3 font-mono text-xs text-gray-500">{r.receiptNumber}</td>
-                        <td className="px-6 py-3 text-gray-600">{r.paymentDate}</td>
+                        <td className="px-6 py-3 text-gray-600">{formatDate(r.paymentDate)}</td>
                         <td className="px-6 py-3 font-medium text-[#1a1a2e]">{r.flatNumber} — {r.ownerName}</td>
                         <td className="px-6 py-3 text-gray-600">{r.month}</td>
                         <td className="px-6 py-3 text-right font-semibold text-[#1a1a2e]">

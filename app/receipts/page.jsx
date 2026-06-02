@@ -12,6 +12,12 @@ import { format, parse } from 'date-fns';
 
 const MODES = ['Cash', 'Bank Transfer'];
 
+const formatDate = (str) => {
+  if (!str) return '—';
+  try { return format(parse(str, 'yyyy-MM-dd', new Date()), 'dd-MM-yyyy'); }
+  catch { return str; }
+};
+
 const toMonthInput = (str) => {
   if (!str) return '';
   try { return format(parse(str, 'MMMM yyyy', new Date()), 'yyyy-MM'); }
@@ -375,7 +381,6 @@ export default function ReceiptsPage() {
                   <thead className="bg-gray-50 text-xs uppercase text-gray-400 tracking-wide">
                     <tr>
                       <th className="text-left px-6 py-3">Receipt No</th>
-                      <th className="text-left px-6 py-3">Flat</th>
                       <th className="text-left px-6 py-3">Owner</th>
                       <th className="text-left px-6 py-3">Month(s)</th>
                       <th className="text-right px-6 py-3">Amount</th>
@@ -388,19 +393,17 @@ export default function ReceiptsPage() {
                     {groups.map((g) => (
                       <tr key={g.receiptNumber} className="border-t border-gray-50 hover:bg-[#fdf6ec]/40 transition-colors">
                         <td className="px-6 py-3 font-mono text-xs text-gray-400">{g.receiptNumber}</td>
-                        <td className="px-6 py-3">
-                          <Link href={`/flats/${g.flatId}`} className="font-semibold text-[#1a1a2e] hover:text-[#b8861f] font-mono">
-                            {g.flatNumber}
+                        <td className="px-6 py-3 text-gray-700" className="font-semibold text-[#1a1a2e] hover:text-[#b8861f] font-mono">
+                          <Link href={`/flats/${g.flatId}`}>
+                            {g.flatNumber} - {g.ownerName}
                           </Link>
                         </td>
-                        <td className="px-6 py-3 text-gray-700">{g.ownerName}</td>
                         <td className="px-6 py-3"><MonthBadges months={g.months} /></td>
                         <td className="px-6 py-3 text-right font-semibold text-[#1a1a2e]">
                           {currency}{g.totalAmount.toLocaleString('en-IN')}
                         </td>
                         <td className="px-6 py-3 text-gray-500 capitalize">{g.modeOfPayment}</td>
-                        <td className="px-6 py-3 text-gray-400 text-xs">{g.paymentDate || '—'}</td>
-                        <td className="px-6 py-3 text-right">
+<td className="px-6 py-3 text-gray-400 text-xs">{formatDate(g.paymentDate)}</td>                        <td className="px-6 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => setEditGroup(g)}

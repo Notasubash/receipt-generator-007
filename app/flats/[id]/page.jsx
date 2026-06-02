@@ -17,6 +17,13 @@ import {
   Download, Trash2, Plus, IndianRupee, X, AlertTriangle
 } from 'lucide-react';
 
+
+const formatDate = (str) => {
+  if (!str) return '—';
+  try { return format(parse(str, 'yyyy-MM-dd', new Date()), 'dd-MM-yyyy'); }
+  catch { return str; }
+};
+
 const FLAT_TYPES = ['1BHK', '2BHK', '3BHK', '4BHK', 'Commercial'];
 const MODES = ['Cash', 'Bank Transfer'];
 
@@ -492,8 +499,7 @@ export default function FlatDetailPage() {
                         </div>
                         <div className="flex items-center gap-2 flex-wrap text-xs text-gray-400">
                           <span className="capitalize">{g.modeOfPayment}</span>
-                          {g.paymentDate && <span>· {g.paymentDate}</span>}
-                          {g.receiptNumber && <span className="font-mono">· #{g.receiptNumber}</span>}
+{g.paymentDate && <span>· {formatDate(g.paymentDate)}</span>}                          {g.receiptNumber && <span className="font-mono">· #{g.receiptNumber}</span>}
                         </div>
                         {g.remarks && <p className="text-xs text-gray-400 italic truncate">{g.remarks}</p>}
                       </div>
@@ -540,8 +546,7 @@ export default function FlatDetailPage() {
                             {currency}{g.totalAmount.toLocaleString('en-IN')}
                           </td>
                           <td className="px-6 py-3 text-gray-500 capitalize">{g.modeOfPayment}</td>
-                          <td className="px-6 py-3 text-gray-400 text-xs">{g.paymentDate || '—'}</td>
-                          <td className="px-6 py-3 text-gray-400 text-xs max-w-[140px] truncate">{g.remarks || '—'}</td>
+<td className="px-6 py-3 text-gray-400 text-xs">{formatDate(g.paymentDate)}</td>                          <td className="px-6 py-3 text-gray-400 text-xs max-w-[140px] truncate">{g.remarks || '—'}</td>
                           <td className="px-6 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <button onClick={() => setEditGroup(g)} className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors" title="Edit">
