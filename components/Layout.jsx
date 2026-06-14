@@ -6,14 +6,15 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Building2, FileText, Settings,
-  LogOut, Menu, X, ChevronRight
+  LogOut, Menu, X, ChevronRight, Hourglass, BarChart2
 } from 'lucide-react';
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/reports', label: 'Reports', icon: BarChart2 },
   { href: '/flats', label: 'Flats', icon: Building2 },
   { href: '/receipts', label: 'Receipts', icon: FileText },
-  { href: '/reports', label: 'Reports', icon: FileText },
+  { href: "/pending", label: "Pending", icon: Hourglass },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

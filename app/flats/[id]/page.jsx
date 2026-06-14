@@ -14,9 +14,8 @@ import toast from 'react-hot-toast';
 import { format, parse } from 'date-fns';
 import {
   ArrowLeft, Pencil, FileText,
-  Download, Trash2, Plus, IndianRupee, X, AlertTriangle
+  Download, Trash2, Plus, IndianRupee, X, AlertTriangle, Clock
 } from 'lucide-react';
-
 
 const formatDate = (str) => {
   if (!str) return '—';
@@ -39,9 +38,14 @@ const fromMonthInput = (str) => {
   catch { return ''; }
 };
 
+const toMonthLabel = (str) => {
+  try { return format(parse(str, 'yyyy-MM', new Date()), 'MMMM yyyy'); }
+  catch { return str; }
+};
+
 function groupByReceiptNumber(receipts) {
   const map = new Map();
-  receipts.forEach((r) => {
+  (receipts ?? []).forEach((r) => {
     const key = r.receiptNumber || r.id;
     if (!map.has(key)) {
       map.set(key, {
@@ -96,16 +100,10 @@ function ConfirmDialog({ open, title = 'Confirm Delete', message, onConfirm, onC
           </button>
         </div>
         <div className="flex gap-2 px-6 pb-5 justify-end">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-          >
+          <button onClick={onCancel} className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors font-medium"
-          >
+          <button onClick={onConfirm} className="px-4 py-2 text-sm rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors font-medium">
             Delete
           </button>
         </div>
@@ -139,7 +137,6 @@ function EditReceiptModal({ group, currency, onSave, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
-
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
           <div>
             <h3 className="font-semibold text-[#1a1a2e]">Edit Receipt</h3>
@@ -152,7 +149,6 @@ function EditReceiptModal({ group, currency, onSave, onClose }) {
             <X size={18} />
           </button>
         </div>
-
         <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden">
           <div className="overflow-y-auto px-6 py-4 space-y-5">
             {rows.map((row, i) => (
@@ -220,7 +216,6 @@ function EditReceiptModal({ group, currency, onSave, onClose }) {
               </div>
             ))}
           </div>
-
           <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 shrink-0">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
               Cancel
@@ -235,29 +230,139 @@ function EditReceiptModal({ group, currency, onSave, onClose }) {
   );
 }
 
+// ── Add Pending Modal (flat-scoped) ──────────────────────────
+function AddPendingModal({ flat, onSave, onClose }) {
+  const currentMonthInput = format(new Date(), 'yyyy-MM');
+  const [month, setMonth]         = useState(currentMonthInput);
+  const [amountDue, setAmountDue] = useState('');
+  const [notes, setNotes]         = useState('');
+  const [saving, setSaving]       = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!month || !amountDue) { toast.error('Month and amount are required'); return; }
+    setSaving(true);
+    await onSave({
+      flatId:    flat.id,
+      flatNumber: flat.flatNumber,
+      ownerName:  flat.ownerName,
+      month:      toMonthLabel(month),
+      amountDue:  Number(amountDue),
+      notes,
+    });
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-[#1a1a2e]">Add Pending Entry</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Flat {flat.flatNumber} · {flat.ownerName}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-500 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">Month *</label>
+              <input
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">Amount Due *</label>
+              <input
+                type="number"
+                min="0"
+                value={amountDue}
+                onChange={(e) => setAmountDue(e.target.value)}
+                placeholder="1500"
+                required
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">Notes</label>
+            <input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional note…"
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving} className="px-4 py-2 text-sm rounded-xl bg-[#1a1a2e] text-[#e2b04a] font-medium hover:bg-[#2a2a3e] disabled:opacity-50 transition-colors">
+              {saving ? 'Saving…' : 'Add Pending'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ────────────────────────────────────────────────
 export default function FlatDetailPage() {
   const { id } = useParams();
   const router = useRouter();
-  const { getFlat, updateFlat, deleteFlat, getAllReceiptsByFlat, getReceipts, deleteReceipt, updateReceipt, getSettings } = useFirestore();
+  const {
+    getFlat, updateFlat, deleteFlat,
+    getAllReceiptsByFlat, deleteReceipt, updateReceipt,
+    getPendingFlats, addPendingFlat, deletePendingFlat,
+    getSettings,
+  } = useFirestore();
+
   const [flat, setFlat]               = useState(null);
   const [receipts, setReceipts]       = useState([]);
+  const [pendingList, setPendingList] = useState([]);
   const [settings, setSettings]       = useState(null);
   const [loading, setLoading]         = useState(true);
   const [editOpen, setEditOpen]       = useState(false);
   const [form, setForm]               = useState({});
   const [saving, setSaving]           = useState(false);
   const [editGroup, setEditGroup]     = useState(null);
-  const [confirmFlat, setConfirmFlat] = useState(false);
-  const [confirmGroup, setConfirmGroup] = useState(null);
+  const [addPendingOpen, setAddPendingOpen] = useState(false);
 
-// in load()
-const load = async () => {
-  const [f, r, s] = await Promise.all([getFlat(id), getAllReceiptsByFlat(id), getSettings()]);
-  setFlat(f);
-  setReceipts(r);   // r is now always a plain array
-  setSettings(s);
-  setLoading(false);
-};
+  // Confirm dialogs
+  const [confirmFlat, setConfirmFlat]       = useState(false);
+  const [confirmGroup, setConfirmGroup]     = useState(null);
+  const [confirmPendingId, setConfirmPendingId] = useState(null);
+
+  const load = async () => {
+    const [f, r, s, allPending] = await Promise.all([
+      getFlat(id),
+      getAllReceiptsByFlat(id),
+      getSettings(),
+      getPendingFlats(),
+    ]);
+    setFlat(f);
+    setReceipts(r ?? []);
+    setSettings(s);
+    // Filter pending to only this flat
+setPendingList(
+  (allPending ?? [])
+    .filter((p) => p.flatId === id)
+    .sort((a, b) => {
+      const parseMonth = (str) => {
+        try { return parse(str, 'MMMM yyyy', new Date()).getTime(); }
+        catch { return 0; }
+      };
+      return parseMonth(a.month) - parseMonth(b.month);
+    })
+);    setLoading(false);
+  };
 
   useEffect(() => { load(); }, [id]);
 
@@ -279,11 +384,6 @@ const load = async () => {
     }
   };
 
-  // Opens the styled confirm dialog instead of native confirm()
-  const handleDeleteFlat = () => {
-    setConfirmFlat(true);
-  };
-
   const handleDeleteFlatConfirmed = async () => {
     try {
       await deleteFlat(id);
@@ -294,11 +394,6 @@ const load = async () => {
     } finally {
       setConfirmFlat(false);
     }
-  };
-
-  // Opens the styled confirm dialog instead of native confirm()
-  const handleDeleteGroup = (group) => {
-    setConfirmGroup(group);
   };
 
   const handleDeleteGroupConfirmed = async () => {
@@ -324,6 +419,29 @@ const load = async () => {
     }
   };
 
+  const handleAddPending = async (data) => {
+    try {
+      await addPendingFlat(data);
+      toast.success('Pending entry added');
+      setAddPendingOpen(false);
+      await load();
+    } catch {
+      toast.error('Failed to add pending');
+    }
+  };
+
+  const handleDeletePendingConfirmed = async () => {
+    try {
+      await deletePendingFlat(confirmPendingId);
+      toast.success('Pending entry removed');
+      await load();
+    } catch {
+      toast.error('Failed to remove');
+    } finally {
+      setConfirmPendingId(null);
+    }
+  };
+
   const downloadGroup = (group) => {
     downloadReceiptPDF(settings || {}, flat, group.rows,
       `receipt_${flat.flatNumber}_${group.receiptNumber}.pdf`);
@@ -335,9 +453,12 @@ const load = async () => {
       `all_receipts_${flat.flatNumber}.pdf`);
   };
 
-  const currency = settings?.currency || '₹';
-  const total    = receipts.reduce((s, r) => s + Number(r.paidAmount || 0), 0);
-  const groups   = groupByReceiptNumber(receipts);
+  const currency    = settings?.currency || '₹';
+  const total       = receipts.reduce((s, r) => s + Number(r.paidAmount || 0), 0);
+  const totalPending = pendingList.reduce((s, p) => s + Number(p.amountDue || 0), 0);
+  const groups      = groupByReceiptNumber(receipts);
+
+  const confirmPendingEntry = pendingList.find((p) => p.id === confirmPendingId);
 
   if (loading) {
     return (
@@ -391,6 +512,19 @@ const load = async () => {
             onCancel={() => setConfirmGroup(null)}
           />
 
+          {/* Confirm: Delete Pending Entry */}
+          <ConfirmDialog
+            open={confirmPendingId !== null}
+            title="Remove Pending Entry"
+            message={
+              confirmPendingEntry
+                ? `Remove pending entry for ${confirmPendingEntry.month}? This cannot be undone.`
+                : 'This cannot be undone.'
+            }
+            onConfirm={handleDeletePendingConfirmed}
+            onCancel={() => setConfirmPendingId(null)}
+          />
+
           {editGroup && (
             <EditReceiptModal
               group={editGroup}
@@ -400,7 +534,15 @@ const load = async () => {
             />
           )}
 
-          {/* Flat info card */}
+          {addPendingOpen && flat && (
+            <AddPendingModal
+              flat={flat}
+              onSave={handleAddPending}
+              onClose={() => setAddPendingOpen(false)}
+            />
+          )}
+
+          {/* ── Flat info card ── */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="bg-[#1a1a2e] px-4 sm:px-6 py-5">
               <div className="flex items-start justify-between gap-3">
@@ -427,13 +569,14 @@ const load = async () => {
                   <button onClick={openEdit} className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors">
                     <Pencil size={16} />
                   </button>
-                  <button onClick={handleDeleteFlat} className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded-lg transition-colors">
+                  <button onClick={() => setConfirmFlat(true)} className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded-lg transition-colors">
                     <Trash2 size={16} />
                   </button>
                 </div>
               </div>
             </div>
 
+            {/* Stats row */}
             <div className="px-4 sm:px-6 py-4 flex flex-wrap gap-4 sm:gap-6 border-b border-gray-50">
               <div className="flex items-center gap-1.5 text-sm text-gray-600">
                 <IndianRupee size={14} className="text-gray-400" />
@@ -449,6 +592,16 @@ const load = async () => {
                   )}
                 </span>
               </div>
+              {pendingList.length > 0 && (
+                <div className="flex items-center gap-1.5 text-sm">
+                  <Clock size={14} className="text-orange-400" />
+                  <span className="text-gray-600">Pending:</span>
+                  <span className="font-semibold text-orange-600">
+                    {currency}{totalPending.toLocaleString('en-IN')}
+                  </span>
+                  <span className="text-gray-400 text-xs">({pendingList.length} entr{pendingList.length !== 1 ? 'ies' : 'y'})</span>
+                </div>
+              )}
             </div>
 
             {flat.notes && (
@@ -458,7 +611,125 @@ const load = async () => {
             )}
           </div>
 
-          {/* Receipt History */}
+          {/* ── Pending Section ── */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 gap-2">
+              <div>
+                <h3 className="font-semibold text-[#1a1a2e] text-base sm:text-lg" style={{ fontFamily: 'Playfair Display, serif' }}>
+                  Pending Payments
+                </h3>
+                {pendingList.length > 0 && (
+                  <p className="text-xs text-orange-500 mt-0.5">
+                    {pendingList.length} entr{pendingList.length !== 1 ? 'ies' : 'y'} · {currency}{totalPending.toLocaleString('en-IN')} due
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setAddPendingOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium bg-orange-50 text-orange-600 border border-orange-200 rounded-xl hover:bg-orange-100 transition-colors"
+              >
+                <Plus size={14} /> Add Pending
+              </button>
+            </div>
+
+            {pendingList.length === 0 ? (
+              <div className="py-10 text-center text-gray-400">
+                <Clock size={28} className="mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No pending entries for this flat.</p>
+                <button
+                  onClick={() => setAddPendingOpen(true)}
+                  className="text-[#b8861f] text-sm font-medium hover:underline mt-1 inline-block"
+                >
+                  Add one →
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Mobile */}
+                <div className="divide-y divide-gray-50 md:hidden">
+                  {pendingList.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between px-4 py-3.5 gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 shrink-0 rounded-lg bg-orange-50 flex items-center justify-center">
+                          <Clock size={14} className="text-orange-400" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-[#1a1a2e]">{p.month}</p>
+                          {p.notes && <p className="text-xs text-gray-400 truncate">{p.notes}</p>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-sm font-bold text-orange-600">
+                          {currency}{Number(p.amountDue || 0).toLocaleString('en-IN')}
+                        </span>
+                        <button
+                          onClick={() => setConfirmPendingId(p.id)}
+                          className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="px-4 py-3 bg-orange-50/50 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Due</span>
+                    <span className="text-sm font-bold text-orange-600">{currency}{totalPending.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                {/* Desktop */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-xs uppercase text-gray-400 tracking-wide">
+                      <tr>
+                        <th className="text-left px-6 py-3">Month</th>
+                        <th className="text-right px-6 py-3">Amount Due</th>
+                        <th className="text-left px-6 py-3">Notes</th>
+                        <th className="text-right px-6 py-3">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingList.map((p) => (
+                        <tr key={p.id} className="border-t border-gray-50 hover:bg-orange-50/30 transition-colors">
+                          <td className="px-6 py-3">
+                            <div className="flex items-center gap-2">
+                              <Clock size={13} className="text-orange-400 shrink-0" />
+                              <span className="font-medium text-[#1a1a2e]">{p.month}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-3 text-right font-bold text-orange-600">
+                            {currency}{Number(p.amountDue || 0).toLocaleString('en-IN')}
+                          </td>
+                          <td className="px-6 py-3 text-gray-400 text-xs max-w-[200px] truncate">
+                            {p.notes || '—'}
+                          </td>
+                          <td className="px-6 py-3 text-right">
+                            <button
+                              onClick={() => setConfirmPendingId(p.id)}
+                              className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Remove"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-100 bg-orange-50/50">
+                        <td colSpan={3} className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Due</td>
+                        <td className="px-6 py-3 text-right font-bold text-orange-600">
+                          {currency}{totalPending.toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── Receipt History ── */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-100 gap-2">
               <h3 className="font-semibold text-[#1a1a2e] text-base sm:text-lg" style={{ fontFamily: 'Playfair Display, serif' }}>
@@ -500,7 +771,8 @@ const load = async () => {
                         </div>
                         <div className="flex items-center gap-2 flex-wrap text-xs text-gray-400">
                           <span className="capitalize">{g.modeOfPayment}</span>
-{g.paymentDate && <span>· {formatDate(g.paymentDate)}</span>}                          {g.receiptNumber && <span className="font-mono">· #{g.receiptNumber}</span>}
+                          {g.paymentDate && <span>· {formatDate(g.paymentDate)}</span>}
+                          {g.receiptNumber && <span className="font-mono">· #{g.receiptNumber}</span>}
                         </div>
                         {g.remarks && <p className="text-xs text-gray-400 italic truncate">{g.remarks}</p>}
                       </div>
@@ -511,7 +783,7 @@ const load = async () => {
                         <button onClick={() => downloadGroup(g)} className="p-2 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors">
                           <Download size={15} />
                         </button>
-                        <button onClick={() => handleDeleteGroup(g)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                        <button onClick={() => setConfirmGroup(g)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                           <Trash2 size={15} />
                         </button>
                       </div>
@@ -547,7 +819,8 @@ const load = async () => {
                             {currency}{g.totalAmount.toLocaleString('en-IN')}
                           </td>
                           <td className="px-6 py-3 text-gray-500 capitalize">{g.modeOfPayment}</td>
-<td className="px-6 py-3 text-gray-400 text-xs">{formatDate(g.paymentDate)}</td>                          <td className="px-6 py-3 text-gray-400 text-xs max-w-[140px] truncate">{g.remarks || '—'}</td>
+                          <td className="px-6 py-3 text-gray-400 text-xs">{formatDate(g.paymentDate)}</td>
+                          <td className="px-6 py-3 text-gray-400 text-xs max-w-[140px] truncate">{g.remarks || '—'}</td>
                           <td className="px-6 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <button onClick={() => setEditGroup(g)} className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors" title="Edit">
@@ -556,7 +829,7 @@ const load = async () => {
                               <button onClick={() => downloadGroup(g)} className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors" title="Download PDF">
                                 <Download size={13} />
                               </button>
-                              <button onClick={() => handleDeleteGroup(g)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                              <button onClick={() => setConfirmGroup(g)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                                 <Trash2 size={13} />
                               </button>
                             </div>
@@ -569,6 +842,7 @@ const load = async () => {
               </>
             )}
           </div>
+
         </div>
 
         {/* Edit Flat Modal */}

@@ -10,7 +10,6 @@ import toast from 'react-hot-toast';
 import { Plus, Search, Download, Trash2, FileText, AlertTriangle, X, Pencil } from 'lucide-react';
 import { format, parse } from 'date-fns';
 
-const PAGE_SIZE = 25;
 const MODES = ['Cash', 'Bank Transfer'];
 
 const formatDate = (str) => {
@@ -33,7 +32,7 @@ const fromMonthInput = (str) => {
 
 function groupByReceiptNumber(receipts) {
   const map = new Map();
-  receipts.forEach((r) => {
+  (receipts ?? []).forEach((r) => {
     const key = r.receiptNumber || r.id;
     if (!map.has(key)) {
       map.set(key, {
@@ -236,23 +235,18 @@ function EditReceiptModal({ group, currency, onSave, onClose }) {
 export default function ReceiptsPage() {
   const { getReceipts, deleteReceipt, updateReceipt, getSettings, getFlats } = useFirestore();
 
-  const [groups, setGroups]           = useState([]);
-  const [flatsMap, setFlatsMap]       = useState({});
-  const [settings, setSettings]       = useState(null);
-  const [search, setSearch]           = useState('');
-  const [loading, setLoading]         = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [lastDoc, setLastDoc]         = useState(null);
-  const [hasMore, setHasMore]         = useState(false);
+  const [groups, setGroups]             = useState([]);
+  const [flatsMap, setFlatsMap]         = useState({});
+  const [settings, setSettings]         = useState(null);
+  const [search, setSearch]             = useState('');
+  const [loading, setLoading]           = useState(true);
   const [confirmGroup, setConfirmGroup] = useState(null);
   const [editGroup, setEditGroup]       = useState(null);
 
-  // Initial load — fetches first 25 + flats + settings in parallel
-  const loadInitial = async () => {
+  const loadAll = async () => {
     setLoading(true);
-    setSearch('');
-    const [result, flats, s] = await Promise.all([
-      getReceipts(null, null),
+    const [receipts, flats, s] = await Promise.all([
+      getReceipts(),
       getFlats(),
       getSettings(),
     ]);
@@ -260,42 +254,12 @@ export default function ReceiptsPage() {
     flats.forEach((f) => { map[f.id] = f; });
     setFlatsMap(map);
     setSettings(s);
-    setGroups(groupByReceiptNumber(result.receipts));
-    setLastDoc(result.lastDoc);
-    setHasMore(result.hasMore);
+    setGroups(groupByReceiptNumber(receipts));
     setLoading(false);
   };
 
-  // Append next page — uses cursor from last load
-  const loadMore = async () => {
-    if (!hasMore || loadingMore) return;
-    setLoadingMore(true);
-    const result = await getReceipts(null, lastDoc);
-    setGroups((prev) => {
-      // Merge new groups into existing — a receipt number may span pages
-      const map = new Map(prev.map((g) => [g.receiptNumber, g]));
-      groupByReceiptNumber(result.receipts).forEach((g) => {
-        if (map.has(g.receiptNumber)) {
-          // Merge months/amounts into the existing group
-          const existing = map.get(g.receiptNumber);
-          g.months.forEach((m) => { if (!existing.months.includes(m)) existing.months.push(m); });
-          existing.totalAmount += g.totalAmount;
-          existing.ids.push(...g.ids);
-          existing.rows.push(...g.rows);
-        } else {
-          map.set(g.receiptNumber, g);
-        }
-      });
-      return Array.from(map.values());
-    });
-    setLastDoc(result.lastDoc);
-    setHasMore(result.hasMore);
-    setLoadingMore(false);
-  };
+  useEffect(() => { loadAll(); }, []);
 
-  useEffect(() => { loadInitial(); }, []);
-
-  // Client-side search filters already-loaded groups
   const filtered = search.trim()
     ? groups.filter((g) => {
         const q = search.toLowerCase();
@@ -312,7 +276,7 @@ export default function ReceiptsPage() {
     try {
       await Promise.all(confirmGroup.ids.map((id) => deleteReceipt(id)));
       toast.success('Receipt deleted');
-      await loadInitial();
+      await loadAll();
     } catch {
       toast.error('Failed to delete');
     } finally {
@@ -325,7 +289,7 @@ export default function ReceiptsPage() {
       await Promise.all(rows.map((r) => updateReceipt(r.id, r)));
       toast.success('Receipt updated');
       setEditGroup(null);
-      await loadInitial();
+      await loadAll();
     } catch {
       toast.error('Failed to update receipt');
     }
@@ -371,7 +335,7 @@ export default function ReceiptsPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search loaded receipts..."
+                placeholder="Search receipts..."
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none bg-white"
               />
             </div>
@@ -385,17 +349,12 @@ export default function ReceiptsPage() {
             <div className="flex gap-4 text-sm flex-wrap">
               <span className="bg-white border border-gray-100 rounded-xl px-4 py-2 text-[#1a1a2e]">
                 <span className="font-semibold">{filtered.length}</span>
-                <span className="text-gray-400"> receipts loaded</span>
+                <span className="text-gray-400"> receipts</span>
               </span>
               <span className="bg-white border border-gray-100 rounded-xl px-4 py-2 text-[#1a1a2e]">
                 <span className="font-semibold">{currency}{total.toLocaleString('en-IN')}</span>
                 <span className="text-gray-400"> total</span>
               </span>
-              {hasMore && (
-                <span className="bg-white border border-gray-100 rounded-xl px-4 py-2 text-gray-400 text-xs flex items-center">
-                  More receipts available — scroll down to load
-                </span>
-              )}
             </div>
           )}
 
@@ -418,95 +377,67 @@ export default function ReceiptsPage() {
                 )}
               </div>
             ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-xs uppercase text-gray-400 tracking-wide">
-                      <tr>
-                        <th className="text-left px-6 py-3">Receipt No</th>
-                        <th className="text-left px-6 py-3">Owner</th>
-                        <th className="text-left px-6 py-3">Month(s)</th>
-                        <th className="text-right px-6 py-3">Amount</th>
-                        <th className="text-left px-6 py-3">Mode</th>
-                        <th className="text-left px-6 py-3">Date</th>
-                        <th className="text-right px-6 py-3">Actions</th>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-xs uppercase text-gray-400 tracking-wide">
+                    <tr>
+                      <th className="text-left px-6 py-3">Receipt No</th>
+                      <th className="text-left px-6 py-3">Owner</th>
+                      <th className="text-left px-6 py-3">Month(s)</th>
+                      <th className="text-right px-6 py-3">Amount</th>
+                      <th className="text-left px-6 py-3">Mode</th>
+                      <th className="text-left px-6 py-3">Date</th>
+                      <th className="text-right px-6 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((g) => (
+                      <tr key={g.receiptNumber} className="border-t border-gray-50 hover:bg-[#fdf6ec]/40 transition-colors">
+                        <td className="px-6 py-3 font-mono text-xs text-gray-400">{g.receiptNumber}</td>
+                        <td className="px-6 py-3 font-semibold text-[#1a1a2e] hover:text-[#b8861f] font-mono">
+                          <Link href={`/flats/${g.flatId}`}>
+                            {g.flatNumber} - {g.ownerName}
+                          </Link>
+                        </td>
+                        <td className="px-6 py-3"><MonthBadges months={g.months} /></td>
+                        <td className="px-6 py-3 text-right font-semibold text-[#1a1a2e]">
+                          {currency}{g.totalAmount.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-6 py-3 text-gray-500 capitalize">{g.modeOfPayment}</td>
+                        <td className="px-6 py-3 text-gray-400 text-xs">{formatDate(g.paymentDate)}</td>
+                        <td className="px-6 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setEditGroup(g)}
+                              className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors"
+                              title="Edit"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleDownload(g)}
+                              className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors"
+                              title="Download PDF"
+                            >
+                              <Download size={13} />
+                            </button>
+                            <button
+                              onClick={() => setConfirmGroup(g)}
+                              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((g) => (
-                        <tr key={g.receiptNumber} className="border-t border-gray-50 hover:bg-[#fdf6ec]/40 transition-colors">
-                          <td className="px-6 py-3 font-mono text-xs text-gray-400">{g.receiptNumber}</td>
-                          <td className="px-6 py-3 font-semibold text-[#1a1a2e] hover:text-[#b8861f] font-mono">
-                            <Link href={`/flats/${g.flatId}`}>
-                              {g.flatNumber} - {g.ownerName}
-                            </Link>
-                          </td>
-                          <td className="px-6 py-3"><MonthBadges months={g.months} /></td>
-                          <td className="px-6 py-3 text-right font-semibold text-[#1a1a2e]">
-                            {currency}{g.totalAmount.toLocaleString('en-IN')}
-                          </td>
-                          <td className="px-6 py-3 text-gray-500 capitalize">{g.modeOfPayment}</td>
-                          <td className="px-6 py-3 text-gray-400 text-xs">{formatDate(g.paymentDate)}</td>
-                          <td className="px-6 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={() => setEditGroup(g)}
-                                className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors"
-                                title="Edit"
-                              >
-                                <Pencil size={13} />
-                              </button>
-                              <button
-                                onClick={() => handleDownload(g)}
-                                className="p-1.5 text-gray-400 hover:text-[#b8861f] hover:bg-[#fdf0d5] rounded-lg transition-colors"
-                                title="Download PDF"
-                              >
-                                <Download size={13} />
-                              </button>
-                              <button
-                                onClick={() => setConfirmGroup(g)}
-                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Load More footer */}
-                {hasMore && !search && (
-                  <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
-                    <span className="text-xs text-gray-400">
-                      Showing {groups.length} receipts — more available
-                    </span>
-                    <button
-                      onClick={loadMore}
-                      disabled={loadingMore}
-                      className="px-4 py-2 text-sm rounded-xl bg-[#1a1a2e] text-[#e2b04a] font-medium hover:bg-[#2a2a3e] disabled:opacity-50 transition-colors flex items-center gap-2"
-                    >
-                      {loadingMore
-                        ? <><div className="w-3.5 h-3.5 border-2 border-[#e2b04a] border-t-transparent rounded-full animate-spin" /> Loading...</>
-                        : 'Load 25 more'
-                      }
-                    </button>
-                  </div>
-                )}
-
-                {/* Search scope notice */}
-                {search && hasMore && (
-                  <div className="px-6 py-3 border-t border-gray-100 bg-amber-50 text-xs text-amber-700 flex items-center gap-2">
-                    <AlertTriangle size={13} />
-                    Search applies to loaded receipts only. Load more to expand search scope.
-                  </div>
-                )}
-              </>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
+
         </div>
       </Layout>
     </ProtectedRoute>
