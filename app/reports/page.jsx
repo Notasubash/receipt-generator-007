@@ -281,7 +281,7 @@ export default function ReportsPage() {
     [receipts, selectedMonthLabel]
   );
 
-  // Group receipts by flat (payment-date based)
+  // Group receipts by flat (payment-date based), sorted by paymentDate ascending
   const receiptsByFlat = useMemo(() => {
     const map = new Map();
     monthReceipts.forEach((r) => {
@@ -297,9 +297,14 @@ export default function ReportsPage() {
       }
       map.get(r.flatId).total += Number(r.paidAmount || 0);
     });
-    return Array.from(map.values()).sort((a, b) =>
-      (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true })
-    );
+    return Array.from(map.values()).sort((a, b) => {
+      const da = a.paymentDate || '';
+      const db = b.paymentDate || '';
+      if (da < db) return -1;
+      if (da > db) return 1;
+      // secondary: flat number if same date
+      return (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true });
+    });
   }, [monthReceipts]);
 
   const totalCollected = useMemo(
