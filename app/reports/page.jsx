@@ -36,6 +36,16 @@ const shortLabel = (monthKey) => {
   } catch { return monthKey.slice(0, 3); }
 };
 
+// April 2026 is the earliest month to check unpaid flats from
+const UNPAID_CHECK_START = parse('April 2026', 'MMMM yyyy', new Date());
+
+const isMonthOnOrAfterStart = (monthLabel) => {
+  try {
+    const d = parse(monthLabel, 'MMMM yyyy', new Date());
+    return d >= UNPAID_CHECK_START;
+  } catch { return false; }
+};
+
 // ── Add Pending Modal ─────────────────────────────────────────
 function AddPendingModal({ flats, onSave, onClose }) {
   const currentMonthInput = format(new Date(), 'yyyy-MM');
@@ -252,7 +262,7 @@ export default function ReportsPage() {
     [receipts, selectedMonthLabel]
   );
 
-  // Group by flat
+  // Group receipts by flat
   const receiptsByFlat = useMemo(() => {
     const map = new Map();
     monthReceipts.forEach((r) => {
@@ -282,7 +292,7 @@ export default function ReportsPage() {
     ? Math.round((receiptsByFlat.length / flats.length) * 100)
     : 0;
 
-  // ── Pending for selected month ────────────────────────────
+  // ── Recorded pending for selected month ───────────────────
   const monthPending = useMemo(
     () => pendingList.filter((p) => p.month === selectedMonthLabel),
     [pendingList, selectedMonthLabel]
@@ -292,6 +302,19 @@ export default function ReportsPage() {
     () => monthPending.reduce((s, p) => s + Number(p.amountDue || 0), 0),
     [monthPending]
   );
+
+  // ── Flats with no receipt AND no pending entry this month ─
+  // Only shown for April 2026 onwards
+  const unpaidFlats = useMemo(() => {
+    if (!isMonthOnOrAfterStart(selectedMonthLabel)) return [];
+    const paidFlatIds    = new Set(monthReceipts.map((r) => r.flatId));
+    const pendingFlatIds = new Set(monthPending.map((p) => p.flatId));
+    return flats
+      .filter((f) => !paidFlatIds.has(f.id) && !pendingFlatIds.has(f.id))
+      .sort((a, b) =>
+        (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true })
+      );
+  }, [flats, monthReceipts, monthPending, selectedMonthLabel]);
 
   // ── Trend data (12 months) ────────────────────────────────
   const trendData = useMemo(() => {
@@ -337,6 +360,9 @@ export default function ReportsPage() {
     try { return format(parse(str, 'yyyy-MM-dd', new Date()), 'dd MMM yyyy'); }
     catch { return str; }
   };
+
+  const showUnpaidSection = isMonthOnOrAfterStart(selectedMonthLabel);
+  const allClear = monthPending.length === 0 && unpaidFlats.length === 0;
 
   // ─────────────────────────────────────────────────────────
   return (
@@ -411,10 +437,26 @@ export default function ReportsPage() {
                 </p>
               </div>
 
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Receipts</p>
-                <p className="text-2xl font-bold text-[#1a1a2e]">{monthReceipts.length}</p>
-                <p className="text-xs text-gray-400 mt-1">entries this month</p>
+              <div
+                className={`rounded-2xl border shadow-sm p-5 ${
+                  showUnpaidSection && unpaidFlats.length > 0
+                    ? 'bg-red-50 border-red-100'
+                    : 'bg-white border-gray-100'
+                }`}
+              >
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Not Paid</p>
+                <p className={`text-2xl font-bold ${
+                  showUnpaidSection && unpaidFlats.length > 0 ? 'text-red-500' : 'text-[#1a1a2e]'
+                }`}>
+                  {showUnpaidSection ? unpaidFlats.length : '—'}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {showUnpaidSection
+                    ? unpaidFlats.length === 0
+                      ? 'All accounted for'
+                      : `flat${unpaidFlats.length !== 1 ? 's' : ''} unaccounted`
+                    : 'from Apr 2026'}
+                </p>
               </div>
             </div>
 
@@ -540,7 +582,7 @@ export default function ReportsPage() {
               )}
             </div>
 
-            {/* ── Pending List ── */}
+            {/* ── Pending & Unpaid Section ── */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                 <div>
@@ -551,9 +593,18 @@ export default function ReportsPage() {
                     Pending — {selectedMonthLabel}
                   </h3>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {monthPending.length === 0
-                      ? 'No pending entries'
-                      : `${monthPending.length} entr${monthPending.length !== 1 ? 'ies' : 'y'} · ${currency}${totalDue.toLocaleString('en-IN')} due`}
+                    {allClear
+                      ? showUnpaidSection
+                        ? 'All flats accounted for'
+                        : 'No pending entries'
+                      : [
+                          monthPending.length > 0 &&
+                            `${monthPending.length} recorded · ${currency}${totalDue.toLocaleString('en-IN')} due`,
+                          unpaidFlats.length > 0 &&
+                            `${unpaidFlats.length} unaccounted`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                   </p>
                 </div>
                 <button
@@ -564,59 +615,112 @@ export default function ReportsPage() {
                 </button>
               </div>
 
-              {monthPending.length === 0 ? (
+              {/* Recorded pending entries */}
+              {monthPending.length > 0 && (
+                <>
+                  <div className="px-6 py-2 bg-orange-50/60 border-b border-orange-100">
+                    <p className="text-xs font-semibold text-orange-500 uppercase tracking-wide">
+                      Recorded Pending · {currency}{totalDue.toLocaleString('en-IN')} due
+                    </p>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {monthPending.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between px-6 py-3.5 hover:bg-orange-50/40 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 shrink-0 rounded-lg bg-orange-50 flex items-center justify-center">
+                            <Clock size={14} className="text-orange-400" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-[#1a1a2e]">
+                              {p.flatNumber} — {p.ownerName}
+                            </p>
+                            {p.notes && (
+                              <p className="text-xs text-gray-400 truncate">{p.notes}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-sm font-bold text-orange-600">
+                            {currency}{Number(p.amountDue || 0).toLocaleString('en-IN')}
+                          </span>
+                          <button
+                            onClick={() => handleDeletePending(p.id)}
+                            className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Remove from pending"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="px-6 py-3 bg-orange-50/50 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        Total Due
+                      </span>
+                      <span className="text-sm font-bold text-orange-600">
+                        {currency}{totalDue.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Flats with no receipt and no pending entry — only from Apr 2026 */}
+              {showUnpaidSection && unpaidFlats.length > 0 && (
+                <>
+                  <div className={`px-6 py-2 border-b border-red-100 bg-red-50/60 ${monthPending.length > 0 ? 'border-t border-gray-100' : ''}`}>
+                    <p className="text-xs font-semibold text-red-400 uppercase tracking-wide">
+                      No Receipt &amp; Not in Pending · {unpaidFlats.length} flat{unpaidFlats.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {unpaidFlats.map((f) => (
+                      <div
+                        key={f.id}
+                        className="flex items-center justify-between px-6 py-3.5 hover:bg-red-50/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 shrink-0 rounded-lg bg-red-50 flex items-center justify-center">
+                            <span className="text-[10px] font-bold text-red-400 font-mono">
+                              {f.flatNumber}
+                            </span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-[#1a1a2e]">{f.ownerName}</p>
+                            <p className="text-xs text-gray-400">
+                              Flat {f.flatNumber}
+                              {f.type ? ` · ${f.type}` : ''}
+                              {f.floor ? ` · Floor ${f.floor}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-xs text-red-400 font-medium italic shrink-0">
+                          Unaccounted
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* All clear state */}
+              {allClear && (
                 <div className="py-12 text-center text-gray-400">
                   <CheckCircle2 size={28} className="mx-auto mb-2 text-green-400 opacity-60" />
-                  <p className="text-sm">No pending entries for {selectedMonthLabel}</p>
+                  <p className="text-sm">
+                    {showUnpaidSection
+                      ? `All flats accounted for in ${selectedMonthLabel}`
+                      : `No pending entries for ${selectedMonthLabel}`}
+                  </p>
                   <button
                     onClick={() => setAddOpen(true)}
                     className="text-[#b8861f] text-sm font-medium hover:underline mt-1 inline-block"
                   >
-                    Add one →
+                    Add pending anyway →
                   </button>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {monthPending.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between px-6 py-3.5 hover:bg-orange-50/40 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 shrink-0 rounded-lg bg-orange-50 flex items-center justify-center">
-                          <Clock size={14} className="text-orange-400" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-[#1a1a2e]">
-                            {p.flatNumber} — {p.ownerName}
-                          </p>
-                          {p.notes && (
-                            <p className="text-xs text-gray-400 truncate">{p.notes}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-sm font-bold text-orange-600">
-                          {currency}{Number(p.amountDue || 0).toLocaleString('en-IN')}
-                        </span>
-                        <button
-                          onClick={() => handleDeletePending(p.id)}
-                          className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Remove from pending"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="px-6 py-3 bg-orange-50/50 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Total Due
-                    </span>
-                    <span className="text-sm font-bold text-orange-600">
-                      {currency}{totalDue.toLocaleString('en-IN')}
-                    </span>
-                  </div>
                 </div>
               )}
             </div>
