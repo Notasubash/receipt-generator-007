@@ -36,6 +36,17 @@ const shortLabel = (monthKey) => {
   } catch { return monthKey.slice(0, 3); }
 };
 
+// Returns the "MMMM yyyy" label based on the receipt's actual paymentDate.
+// Falls back to r.month if paymentDate is missing or unparseable.
+const paymentMonthLabel = (receipt) => {
+  try {
+    if (!receipt.paymentDate) return receipt.month;
+    return format(parse(receipt.paymentDate, 'yyyy-MM-dd', new Date()), 'MMMM yyyy');
+  } catch {
+    return receipt.month;
+  }
+};
+
 // April 2026 is the earliest month to check unpaid flats from
 const UNPAID_CHECK_START = parse('April 2026', 'MMMM yyyy', new Date());
 
@@ -256,13 +267,21 @@ export default function ReportsPage() {
   const currency           = settings?.currency || '₹';
   const selectedMonthLabel = toMonthLabel(selectedMonth);
 
-  // ── Month receipts ────────────────────────────────────────
+  // ── Month receipts (by PAYMENT DATE) ─────────────────────
+  // Used for: receipt list display, total collected, flats paid count, chart
   const monthReceipts = useMemo(
-    () => receipts.filter((r) => r.month === selectedMonthLabel),
+    () => receipts.filter((r) => paymentMonthLabel(r) === selectedMonthLabel),
     [receipts, selectedMonthLabel]
   );
 
-  // Group receipts by flat
+  // ── Billing month paid flat IDs (by BILLING MONTH) ───────
+  // Used for: unpaid flat detection — did this flat settle their dues for this billing cycle?
+  const billingMonthPaidFlatIds = useMemo(
+    () => new Set(receipts.filter((r) => r.month === selectedMonthLabel).map((r) => r.flatId)),
+    [receipts, selectedMonthLabel]
+  );
+
+  // Group receipts by flat (payment-date based)
   const receiptsByFlat = useMemo(() => {
     const map = new Map();
     monthReceipts.forEach((r) => {
@@ -304,24 +323,24 @@ export default function ReportsPage() {
   );
 
   // ── Flats with no receipt AND no pending entry this month ─
-  // Only shown for April 2026 onwards
+  // Uses BILLING MONTH to check if a flat has paid for that period.
+  // Only shown for April 2026 onwards.
   const unpaidFlats = useMemo(() => {
     if (!isMonthOnOrAfterStart(selectedMonthLabel)) return [];
-    const paidFlatIds    = new Set(monthReceipts.map((r) => r.flatId));
     const pendingFlatIds = new Set(monthPending.map((p) => p.flatId));
     return flats
-      .filter((f) => !paidFlatIds.has(f.id) && !pendingFlatIds.has(f.id))
+      .filter((f) => !billingMonthPaidFlatIds.has(f.id) && !pendingFlatIds.has(f.id))
       .sort((a, b) =>
         (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true })
       );
-  }, [flats, monthReceipts, monthPending, selectedMonthLabel]);
+  }, [flats, billingMonthPaidFlatIds, monthPending, selectedMonthLabel]);
 
-  // ── Trend data (12 months) ────────────────────────────────
+  // ── Trend data (12 months, grouped by PAYMENT DATE) ──────
   const trendData = useMemo(() => {
     const keys = last12MonthKeys();
     return keys.map((key) => {
       const amount = receipts
-        .filter((r) => r.month === key)
+        .filter((r) => paymentMonthLabel(r) === key)
         .reduce((s, r) => s + Number(r.paidAmount || 0), 0);
       return {
         label:      key,
