@@ -47,7 +47,7 @@ function getNextReceiptNumber(existingReceipts) {
 function NewReceiptPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { getFlats, getReceipts, addReceipt, getSettings } = useFirestore();
+  const { getFlats, getReceipts, addReceipt, getSettings, getPendingFlats, deletePendingFlat } = useFirestore();
   const { user } = useAuth();
   const [flats, setFlats]                   = useState([]);
   const [settings, setSettings]             = useState(null);
@@ -196,6 +196,24 @@ function NewReceiptPageInner() {
         });
         created.push({ ...entry, receiptNumber });
       }
+
+      // ── Auto-delete matching pending entries ──────────────────────
+      try {
+        const allPending = await getPendingFlats();
+        const matchingPending = allPending.filter(
+          (p) => p.flatId === selectedFlat.id && created.some((c) => c.month === p.month)
+        );
+        if (matchingPending.length > 0) {
+          await Promise.all(matchingPending.map((p) => deletePendingFlat(p.id)));
+          toast.success(
+            `Cleared ${matchingPending.length} pending entr${matchingPending.length > 1 ? 'ies' : 'y'} automatically`
+          );
+        }
+      } catch (err) {
+        // Pending cleanup failure should never block the main save flow
+        console.warn('Could not clean up pending entries:', err);
+      }
+      // ─────────────────────────────────────────────────────────────
 
       setSavedReceipts(created);
       setSaved(true);

@@ -238,7 +238,7 @@ function EditReceiptModal({ group, currency, onSave, onClose }) {
 export default function FlatDetailPage() {
   const { id } = useParams();
   const router = useRouter();
-  const { getFlat, updateFlat, deleteFlat, getReceipts, deleteReceipt, updateReceipt, getSettings } = useFirestore();
+  const { getFlat, updateFlat, deleteFlat, getAllReceiptsByFlat, getReceipts, deleteReceipt, updateReceipt, getSettings } = useFirestore();
   const [flat, setFlat]               = useState(null);
   const [receipts, setReceipts]       = useState([]);
   const [settings, setSettings]       = useState(null);
@@ -250,13 +250,14 @@ export default function FlatDetailPage() {
   const [confirmFlat, setConfirmFlat] = useState(false);
   const [confirmGroup, setConfirmGroup] = useState(null);
 
-  const load = async () => {
-    const [f, r, s] = await Promise.all([getFlat(id), getReceipts(id), getSettings()]);
-    setFlat(f);
-    setReceipts(r);
-    setSettings(s);
-    setLoading(false);
-  };
+// in load()
+const load = async () => {
+  const [f, r, s] = await Promise.all([getFlat(id), getAllReceiptsByFlat(id), getSettings()]);
+  setFlat(f);
+  setReceipts(r);   // r is now always a plain array
+  setSettings(s);
+  setLoading(false);
+};
 
   useEffect(() => { load(); }, [id]);
 

@@ -13,6 +13,7 @@ const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/flats', label: 'Flats', icon: Building2 },
   { href: '/receipts', label: 'Receipts', icon: FileText },
+  { href: '/reports', label: 'Reports', icon: FileText },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

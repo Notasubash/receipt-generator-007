@@ -1,29 +1,36 @@
 'use client';
-// app/dashboard/page.jsx
+// app/dashboard/page.jsx  (full updated file)
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Layout from '../../components/Layout';
 import ProtectedRoute from '../../components/ProtectedRoute';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useAuth } from '../../context/AuthContext';
-import { Building2, FileText, IndianRupee, TrendingUp, Plus, ArrowRight, AlertCircle, X, ChevronRight } from 'lucide-react';
+import SavePendingModal from '../../components/SavePendingModal';
+import {
+  Building2, FileText, IndianRupee, TrendingUp,
+  Plus, ArrowRight, AlertCircle, X, ChevronRight, BookmarkPlus, Check
+} from 'lucide-react';
 import { format, parse } from 'date-fns';
+import toast from 'react-hot-toast';
 
 const formatDate = (str) => {
   if (!str) return '—';
-  try { 
-    console.log(format(parse(str, 'yyyy-MM-dd', new Date()), 'dd-MM-yyyy'));return format(parse(str, 'yyyy-MM-dd', new Date()), 'dd-MM-yyyy'); }
+  try { return format(parse(str, 'yyyy-MM-dd', new Date()), 'dd-MM-yyyy'); }
   catch { return str; }
 };
 
 export default function DashboardPage() {
-
-  const { getDashboardStats, getSettings } = useFirestore();
+  const { getDashboardStats, getSettings, addPendingFlat } = useFirestore();
   const { user } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [settings, setSettings] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats]           = useState(null);
+  const [settings, setSettings]     = useState(null);
+  const [loading, setLoading]       = useState(true);
   const [pendingOpen, setPendingOpen] = useState(false);
+  // flat being saved to pending (opens mini-modal)
+  const [savingFlat, setSavingFlat] = useState(null);
+  // set of flatIds already saved this session
+  const [savedIds, setSavedIds]     = useState(new Set());
 
   useEffect(() => {
     if (!user) return;
@@ -38,7 +45,6 @@ export default function DashboardPage() {
 
   const currency = settings?.currency || '₹';
 
-  // ── Derive pending flats for current month ────────────────────
   const currentMonth = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
   const paidFlatIds = new Set(
     (stats?.receipts || [])
@@ -46,6 +52,17 @@ export default function DashboardPage() {
       .map((r) => r.flatId)
   );
   const pendingFlats = (stats?.flats || []).filter((f) => !paidFlatIds.has(f.id));
+
+  const handleSaveToPending = async (data) => {
+    try {
+      await addPendingFlat(data);
+      toast.success(`${data.flatNumber} saved to pending`);
+      setSavedIds((prev) => new Set([...prev, data.flatId]));
+      setSavingFlat(null);
+    } catch {
+      toast.error('Failed to save to pending');
+    }
+  };
 
   const StatCard = ({ icon: Icon, label, value, sub, color, onClick }) => (
     <div
@@ -79,6 +96,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-8 max-w-6xl">
+
             {/* Welcome */}
             <div className="bg-[#1a1a2e] rounded-2xl p-6 text-white relative overflow-hidden">
               <div className="absolute right-0 top-0 w-40 h-40 bg-[#e2b04a]/10 rounded-full -translate-y-1/2 translate-x-1/2" />
@@ -99,8 +117,6 @@ export default function DashboardPage() {
 
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-
               <StatCard
                 icon={IndianRupee}
                 label="This Month"
@@ -108,8 +124,6 @@ export default function DashboardPage() {
                 sub={currentMonth}
                 color="bg-[#fdf0d5] text-[#b8861f]"
               />
-
-              {/* Pending stat card */}
               <StatCard
                 icon={AlertCircle}
                 label="Pending This Month"
@@ -171,9 +185,9 @@ export default function DashboardPage() {
             {/* Quick links */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
-                { href: '/flats', label: 'Manage Flats', desc: 'Add or edit flat details', icon: Building2 },
-                { href: '/receipts/new', label: 'New Receipt', desc: 'Generate one or multiple', icon: Plus },
-                { href: '/settings', label: 'Settings', desc: 'Configure apartment info', icon: FileText },
+                { href: '/flats',        label: 'Manage Flats',  desc: 'Add or edit flat details',      icon: Building2 },
+                { href: '/receipts/new', label: 'New Receipt',   desc: 'Generate one or multiple',      icon: Plus },
+                { href: '/reports',      label: 'Reports',       desc: 'Month-wise collection report',  icon: TrendingUp },
               ].map(({ href, label, desc, icon: Icon }) => (
                 <Link key={href} href={href} className="bg-white border border-gray-100 rounded-2xl p-5 flex items-center gap-4 hover:border-[#e2b04a] hover:shadow-sm transition-all card-lift">
                   <div className="w-10 h-10 bg-[#fdf0d5] rounded-xl flex items-center justify-center">
@@ -190,7 +204,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── Pending Flats Modal ─────────────────────────────────── */}
+        {/* ── Pending Flats Modal ── */}
         {pendingOpen && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -207,7 +221,9 @@ export default function DashboardPage() {
                   <h3 className="font-semibold text-[#1a1a2e]" style={{ fontFamily: 'Playfair Display, serif' }}>
                     Pending Flats
                   </h3>
-                  <p className="text-xs text-gray-400 mt-0.5">{currentMonth} · {pendingFlats.length} flat{pendingFlats.length !== 1 ? 's' : ''} not yet paid</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {currentMonth} · {pendingFlats.length} flat{pendingFlats.length !== 1 ? 's' : ''} not yet paid
+                  </p>
                 </div>
                 <button
                   onClick={() => setPendingOpen(false)}
@@ -219,40 +235,81 @@ export default function DashboardPage() {
 
               {/* List */}
               <div className="overflow-y-auto flex-1">
-                {pendingFlats.map((flat, i) => (
-                  <Link
-                    key={flat.id}
-                    href={`/receipts/new?flatId=${flat.id}`}
-                    onClick={() => setPendingOpen(false)}
-                    className="flex items-center justify-between px-6 py-3.5 hover:bg-[#fdf6ec] transition-colors border-t border-gray-50 first:border-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div>
+                {pendingFlats.map((flat) => {
+                  const isSaved = savedIds.has(flat.id);
+                  return (
+                    <div
+                      key={flat.id}
+                      className="flex items-center gap-3 px-6 py-3.5 hover:bg-[#fdf6ec] transition-colors border-t border-gray-50 first:border-0"
+                    >
+                      {/* Flat info — clicking navigates to new receipt */}
+                      <Link
+                        href={`/receipts/new?flatId=${flat.id}`}
+                        onClick={() => setPendingOpen(false)}
+                        className="flex-1 min-w-0"
+                      >
                         <p className="text-sm font-medium text-[#1a1a2e]">{flat.ownerName}</p>
                         <p className="text-xs text-gray-400">
                           {flat.flatNumber}{flat.type ? ` · ${flat.type}` : ''}{flat.floor ? ` · Floor ${flat.floor}` : ''}
                         </p>
-                      </div>
+                      </Link>
+
+                      {/* Save to Pending */}
+                      <button
+                        onClick={() => !isSaved && setSavingFlat(flat)}
+                        title={isSaved ? 'Saved to pending' : 'Save to pending list'}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
+                          isSaved
+                            ? 'bg-[#fdf0d5] text-[#b8861f] cursor-default'
+                            : 'bg-gray-100 text-gray-500 hover:bg-[#fdf0d5] hover:text-[#b8861f]'
+                        }`}
+                      >
+                        {isSaved ? <Check size={12} /> : <BookmarkPlus size={12} />}
+                        {isSaved ? 'Saved' : 'Pending'}
+                      </button>
+
+                      {/* Add receipt */}
+                      <Link
+                        href={`/receipts/new?flatId=${flat.id}`}
+                        onClick={() => setPendingOpen(false)}
+                        className="text-xs text-[#b8861f] font-medium flex items-center gap-0.5 hover:underline shrink-0"
+                      >
+                        Add receipt <ChevronRight size={12} />
+                      </Link>
                     </div>
-                    <span className="text-xs text-[#b8861f] font-medium flex items-center gap-1">
-                      Add receipt <ChevronRight size={12} />
-                    </span>
-                  </Link>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+              <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex items-center justify-between">
+                <Link
+                  href="/reports"
+                  onClick={() => setPendingOpen(false)}
+                  className="text-xs text-[#b8861f] font-medium hover:underline"
+                >
+                  View in Reports →
+                </Link>
                 <Link
                   href="/receipts/new"
                   onClick={() => setPendingOpen(false)}
-                  className="text-xs text-[#b8861f] font-medium hover:underline"
+                  className="text-xs text-gray-400 hover:underline"
                 >
                   Go to new receipt →
                 </Link>
               </div>
             </div>
           </div>
+        )}
+
+        {/* ── Save to Pending mini-modal ── */}
+        {savingFlat && (
+          <SavePendingModal
+            flat={savingFlat}
+            month={currentMonth}
+            onSave={handleSaveToPending}
+            onClose={() => setSavingFlat(null)}
+          />
         )}
       </Layout>
     </ProtectedRoute>
