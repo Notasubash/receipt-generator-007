@@ -14,7 +14,7 @@ import toast from 'react-hot-toast';
 import { format, parse } from 'date-fns';
 import {
   ArrowLeft, Pencil, FileText,
-  Download, Trash2, Plus, IndianRupee, X, AlertTriangle, Clock
+  Download, Trash2, Plus, IndianRupee, X, AlertTriangle, Clock, UserX, UserCheck
 } from 'lucide-react';
 
 const formatDate = (str) => {
@@ -113,7 +113,7 @@ function ConfirmDialog({ open, title = 'Confirm Delete', message, onConfirm, onC
 }
 
 function EditReceiptModal({ group, currency, onSave, onClose }) {
-  const [rows, setRows]     = useState(group.rows.map((r) => ({ ...r })));
+  const [rows, setRows] = useState(group.rows.map((r) => ({ ...r })));
   const [saving, setSaving] = useState(false);
 
   const setRow = (index, key, value) =>
@@ -233,21 +233,21 @@ function EditReceiptModal({ group, currency, onSave, onClose }) {
 // ── Add Pending Modal (flat-scoped) ──────────────────────────
 function AddPendingModal({ flat, onSave, onClose }) {
   const currentMonthInput = format(new Date(), 'yyyy-MM');
-  const [month, setMonth]         = useState(currentMonthInput);
+  const [month, setMonth] = useState(currentMonthInput);
   const [amountDue, setAmountDue] = useState('');
-  const [notes, setNotes]         = useState('');
-  const [saving, setSaving]       = useState(false);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!month || !amountDue) { toast.error('Month and amount are required'); return; }
     setSaving(true);
     await onSave({
-      flatId:    flat.id,
+      flatId: flat.id,
       flatNumber: flat.flatNumber,
-      ownerName:  flat.ownerName,
-      month:      toMonthLabel(month),
-      amountDue:  Number(amountDue),
+      ownerName: flat.ownerName,
+      month: toMonthLabel(month),
+      amountDue: Number(amountDue),
       notes,
     });
     setSaving(false);
@@ -324,21 +324,25 @@ export default function FlatDetailPage() {
     getSettings,
   } = useFirestore();
 
-  const [flat, setFlat]               = useState(null);
-  const [receipts, setReceipts]       = useState([]);
+  const [flat, setFlat] = useState(null);
+  const [receipts, setReceipts] = useState([]);
   const [pendingList, setPendingList] = useState([]);
-  const [settings, setSettings]       = useState(null);
-  const [loading, setLoading]         = useState(true);
-  const [editOpen, setEditOpen]       = useState(false);
-  const [form, setForm]               = useState({});
-  const [saving, setSaving]           = useState(false);
-  const [editGroup, setEditGroup]     = useState(null);
+  const [settings, setSettings] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [editGroup, setEditGroup] = useState(null);
   const [addPendingOpen, setAddPendingOpen] = useState(false);
 
   // Confirm dialogs
-  const [confirmFlat, setConfirmFlat]       = useState(false);
-  const [confirmGroup, setConfirmGroup]     = useState(null);
+  const [confirmFlat, setConfirmFlat] = useState(false);
+  const [confirmGroup, setConfirmGroup] = useState(null);
   const [confirmPendingId, setConfirmPendingId] = useState(null);
+  // add to imports
+
+  // add near other helpers, top-level
+  const isActiveFlat = (f) => f?.status !== 'inactive';
 
   const load = async () => {
     const [f, r, s, allPending] = await Promise.all([
@@ -351,23 +355,36 @@ export default function FlatDetailPage() {
     setReceipts(r ?? []);
     setSettings(s);
     // Filter pending to only this flat
-setPendingList(
-  (allPending ?? [])
-    .filter((p) => p.flatId === id)
-    .sort((a, b) => {
-      const parseMonth = (str) => {
-        try { return parse(str, 'MMMM yyyy', new Date()).getTime(); }
-        catch { return 0; }
-      };
-      return parseMonth(a.month) - parseMonth(b.month);
-    })
-);    setLoading(false);
+    setPendingList(
+      (allPending ?? [])
+        .filter((p) => p.flatId === id)
+        .sort((a, b) => {
+          const parseMonth = (str) => {
+            try { return parse(str, 'MMMM yyyy', new Date()).getTime(); }
+            catch { return 0; }
+          };
+          return parseMonth(a.month) - parseMonth(b.month);
+        })
+    ); setLoading(false);
   };
 
   useEffect(() => { load(); }, [id]);
 
   const openEdit = () => { setForm(flat); setEditOpen(true); };
   const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
+
+  const handleToggleStatus = async () => {
+    const nextStatus = isActiveFlat(flat) ? 'inactive' : 'active';
+    const verb = nextStatus === 'inactive' ? 'Mark this flat inactive' : 'Mark this flat active';
+    if (!confirm(`${verb}?`)) return;
+    try {
+      await updateFlat(id, { status: nextStatus });
+      toast.success(nextStatus === 'inactive' ? 'Marked inactive' : 'Marked active');
+      await load();
+    } catch {
+      toast.error('Failed to update status');
+    }
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -453,10 +470,10 @@ setPendingList(
       `all_receipts_${flat.flatNumber}.pdf`);
   };
 
-  const currency    = settings?.currency || '₹';
-  const total       = receipts.reduce((s, r) => s + Number(r.paidAmount || 0), 0);
+  const currency = settings?.currency || '₹';
+  const total = receipts.reduce((s, r) => s + Number(r.paidAmount || 0), 0);
   const totalPending = pendingList.reduce((s, p) => s + Number(p.amountDue || 0), 0);
-  const groups      = groupByReceiptNumber(receipts);
+  const groups = groupByReceiptNumber(receipts);
 
   const confirmPendingEntry = pendingList.find((p) => p.id === confirmPendingId);
 
@@ -562,18 +579,32 @@ setPendingList(
                         {flat.ownershipType === 'owner' ? 'Owner' : 'Tenant'}
                       </Badge>
                       {flat.floor && <Badge color="gray">Floor {flat.floor}</Badge>}
+                      {isActiveFlat(flat) ? (
+                        <Badge color="green">Active</Badge>
+                      ) : (
+                        <Badge color="gray">Inactive</Badge>
+                      )}
                     </div>
                   </div>
                 </div>
                 <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={handleToggleStatus}
+                    className={`p-2 rounded-lg transition-colors ${isActiveFlat(flat)
+                      ? 'bg-orange-500/20 hover:bg-orange-500/40 text-orange-300'
+                      : 'bg-green-500/20 hover:bg-green-500/40 text-green-300'
+                      }`}
+                    title={isActiveFlat(flat) ? 'Mark inactive' : 'Mark active'}
+                  >
+                    {isActiveFlat(flat) ? <UserX size={16} /> : <UserCheck size={16} />}
+                  </button>
                   <button onClick={openEdit} className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors">
                     <Pencil size={16} />
                   </button>
                   <button onClick={() => setConfirmFlat(true)} className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded-lg transition-colors">
                     <Trash2 size={16} />
                   </button>
-                </div>
-              </div>
+                </div>              </div>
             </div>
 
             {/* Stats row */}

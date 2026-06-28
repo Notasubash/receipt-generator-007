@@ -15,6 +15,9 @@ import { useAuth } from '../../../context/AuthContext';
 const RECEIPT_START = 1739;
 const MODES = ['Cash', 'Bank Transfer'];
 
+// add near other helpers
+const isActiveFlat = (f) => f?.status !== 'inactive';
+
 const toMonthInput = (str) => {
   if (!str) return '';
   try { return format(parse(str, 'MMMM yyyy', new Date()), 'yyyy-MM'); }
@@ -49,18 +52,18 @@ function NewReceiptPageInner() {
   const router = useRouter();
   const { getFlats, getReceipts, addReceipt, getSettings, getPendingFlats, deletePendingFlat } = useFirestore();
   const { user } = useAuth();
-  const [flats, setFlats]                   = useState([]);
-  const [settings, setSettings]             = useState(null);
-  const [nextReceiptNo, setNextReceiptNo]   = useState(RECEIPT_START);
+  const [flats, setFlats] = useState([]);
+  const [settings, setSettings] = useState(null);
+  const [nextReceiptNo, setNextReceiptNo] = useState(RECEIPT_START);
   const [selectedFlatId, setSelectedFlatId] = useState(searchParams.get('flatId') || '');
-  const [flatSearchQ, setFlatSearchQ]       = useState('');
-  const [flatDropdown, setFlatDropdown]     = useState(false);
-  const [selectedFlat, setSelectedFlat]     = useState(null);
-  const [entries, setEntries]               = useState([blankEntry()]);
-  const [saving, setSaving]                 = useState(false);
-  const [saved, setSaved]                   = useState(false);
-  const [savedReceipts, setSavedReceipts]   = useState([]);
-  const [flatReceiptMonths, setFlatReceiptMonths]   = useState(new Set());
+  const [flatSearchQ, setFlatSearchQ] = useState('');
+  const [flatDropdown, setFlatDropdown] = useState(false);
+  const [selectedFlat, setSelectedFlat] = useState(null);
+  const [entries, setEntries] = useState([blankEntry()]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savedReceipts, setSavedReceipts] = useState([]);
+  const [flatReceiptMonths, setFlatReceiptMonths] = useState(new Set());
   const [checkingDuplicates, setCheckingDuplicates] = useState(false);
 
   useEffect(() => {
@@ -75,11 +78,13 @@ function NewReceiptPageInner() {
       const preId = searchParams.get('flatId');
       if (preId) {
         const found = f.find((fl) => fl.id === preId);
-        if (found) {
+        if (found && isActiveFlat(found)) {
           setSelectedFlat(found);
           setSelectedFlatId(found.id);
           setFlatSearchQ(found.flatNumber);
           loadFlatReceiptMonths(found.id, allReceipts);
+        } else if (found && !isActiveFlat(found)) {
+          toast.error('This flat is marked inactive. Please select the current occupant.');
         }
       }
     });
@@ -100,10 +105,12 @@ function NewReceiptPageInner() {
     }
   }, [getReceipts]);
 
-  const filteredFlats = flats.filter((f) =>
-    f.flatNumber?.toLowerCase().includes(flatSearchQ.toLowerCase()) ||
-    f.ownerName?.toLowerCase().includes(flatSearchQ.toLowerCase())
-  );
+  const filteredFlats = flats
+    .filter(isActiveFlat)
+    .filter((f) =>
+      f.flatNumber?.toLowerCase().includes(flatSearchQ.toLowerCase()) ||
+      f.ownerName?.toLowerCase().includes(flatSearchQ.toLowerCase())
+    );
 
   const handleFlatSelect = (flat) => {
     setSelectedFlat(flat);
@@ -404,9 +411,8 @@ function NewReceiptPageInner() {
                   return (
                     <div
                       key={idx}
-                      className={`bg-white rounded-2xl border shadow-sm p-6 transition-colors ${
-                        dupInfo ? 'border-red-300 bg-red-50/30' : 'border-gray-100'
-                      }`}
+                      className={`bg-white rounded-2xl border shadow-sm p-6 transition-colors ${dupInfo ? 'border-red-300 bg-red-50/30' : 'border-gray-100'
+                        }`}
                     >
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
@@ -446,11 +452,10 @@ function NewReceiptPageInner() {
                             type="month"
                             value={toMonthInput(entry.month)}
                             onChange={(e) => updateEntry(idx, 'month', fromMonthInput(e.target.value))}
-                            className={`w-full px-3.5 py-2.5 border rounded-lg text-sm focus:ring-2 outline-none transition-colors ${
-                              dupInfo
-                                ? 'border-red-300 focus:border-red-400 focus:ring-red-200 bg-red-50'
-                                : 'border-gray-200 focus:border-[#e2b04a] focus:ring-[#e2b04a]/20'
-                            }`}
+                            className={`w-full px-3.5 py-2.5 border rounded-lg text-sm focus:ring-2 outline-none transition-colors ${dupInfo
+                              ? 'border-red-300 focus:border-red-400 focus:ring-red-200 bg-red-50'
+                              : 'border-gray-200 focus:border-[#e2b04a] focus:ring-[#e2b04a]/20'
+                              }`}
                           />
                         </div>
 

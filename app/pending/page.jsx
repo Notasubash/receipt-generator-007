@@ -16,14 +16,17 @@ const toMonthLabel = (str) => {
   catch { return str; }
 };
 
+// add helper
+const isActiveFlat = (f) => f?.status !== 'inactive';
+
 // ── Add Pending Modal ────────────────────────────────────────
 function AddPendingModal({ flats, onSave, onClose }) {
   const currentMonthInput = format(new Date(), 'yyyy-MM');
-  const [flatId, setFlatId]       = useState('');
-  const [month, setMonth]         = useState(currentMonthInput);
+  const [flatId, setFlatId] = useState('');
+  const [month, setMonth] = useState(currentMonthInput);
   const [amountDue, setAmountDue] = useState('');
-  const [notes, setNotes]         = useState('');
-  const [saving, setSaving]       = useState(false);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,9 +39,9 @@ function AddPendingModal({ flats, onSave, onClose }) {
     await onSave({
       flatId,
       flatNumber: flat?.flatNumber || '',
-      ownerName:  flat?.ownerName  || '',
-      month:      toMonthLabel(month),
-      amountDue:  Number(amountDue),
+      ownerName: flat?.ownerName || '',
+      month: toMonthLabel(month),
+      amountDue: Number(amountDue),
       notes,
     });
     setSaving(false);
@@ -162,12 +165,12 @@ export default function PendingPage() {
   const { getFlats, getSettings, getPendingFlats, addPendingFlat, deletePendingFlat } = useFirestore();
 
   const [pendingList, setPendingList] = useState([]);
-  const [flats, setFlats]             = useState([]);
-  const [settings, setSettings]       = useState(null);
-  const [loading, setLoading]         = useState(true);
-  const [addOpen, setAddOpen]         = useState(false);
-  const [search, setSearch]           = useState('');
-  const [confirmId, setConfirmId]     = useState(null);
+  const [flats, setFlats] = useState([]);
+  const [settings, setSettings] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [confirmId, setConfirmId] = useState(null);
 
   const load = async () => {
     if (!user) return;
@@ -187,34 +190,34 @@ export default function PendingPage() {
     if (!q) return pendingList;
     return pendingList.filter((p) =>
       p.flatNumber?.toLowerCase().includes(q) ||
-      p.ownerName?.toLowerCase().includes(q)  ||
-      p.month?.toLowerCase().includes(q)      ||
+      p.ownerName?.toLowerCase().includes(q) ||
+      p.month?.toLowerCase().includes(q) ||
       p.notes?.toLowerCase().includes(q)
     );
   }, [pendingList, search]);
 
-const byFlat = useMemo(() => {
-  const parseMonth = (str) => {
-    try { return parse(str, 'MMMM yyyy', new Date()).getTime(); }
-    catch { return 0; }
-  };
-  const map = new Map();
-  filtered.forEach((p) => {
-    if (!map.has(p.flatId)) {
-      map.set(p.flatId, { flatNumber: p.flatNumber, ownerName: p.ownerName, entries: [], total: 0 });
-    }
-    map.get(p.flatId).entries.push(p);
-    map.get(p.flatId).total += Number(p.amountDue || 0);
-  });
-  return Array.from(map.values())
-    .map((flat) => ({
-      ...flat,
-      entries: [...flat.entries].sort((a, b) => parseMonth(a.month) - parseMonth(b.month)),
-    }))
-    .sort((a, b) =>
-      (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true })
-    );
-}, [filtered]);
+  const byFlat = useMemo(() => {
+    const parseMonth = (str) => {
+      try { return parse(str, 'MMMM yyyy', new Date()).getTime(); }
+      catch { return 0; }
+    };
+    const map = new Map();
+    filtered.forEach((p) => {
+      if (!map.has(p.flatId)) {
+        map.set(p.flatId, { flatNumber: p.flatNumber, ownerName: p.ownerName, entries: [], total: 0 });
+      }
+      map.get(p.flatId).entries.push(p);
+      map.get(p.flatId).total += Number(p.amountDue || 0);
+    });
+    return Array.from(map.values())
+      .map((flat) => ({
+        ...flat,
+        entries: [...flat.entries].sort((a, b) => parseMonth(a.month) - parseMonth(b.month)),
+      }))
+      .sort((a, b) =>
+        (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true })
+      );
+  }, [filtered]);
 
   const grandTotal = useMemo(
     () => filtered.reduce((s, p) => s + Number(p.amountDue || 0), 0),
@@ -441,12 +444,11 @@ const byFlat = useMemo(() => {
 
         {addOpen && (
           <AddPendingModal
-            flats={flats}
+            flats={flats.filter(isActiveFlat)}
             onSave={handleAdd}
             onClose={() => setAddOpen(false)}
           />
-        )}
-      </Layout>
+        )}      </Layout>
     </ProtectedRoute>
   );
 }

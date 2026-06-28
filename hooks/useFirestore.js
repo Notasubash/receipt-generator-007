@@ -57,7 +57,7 @@ export function useFirestore() {
   const addFlat = async (data) => {
     if (!user) return;
     const ref = collection(db, 'users', user.uid, 'flats');
-    return addDoc(ref, { ...data, createdAt: serverTimestamp() });
+    return addDoc(ref, { status: 'active', ...data, createdAt: serverTimestamp() });
   };
 
   const updateFlat = async (flatId, data) => {

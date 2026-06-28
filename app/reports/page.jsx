@@ -18,6 +18,8 @@ const toMonthLabel = (str) => {
   catch { return str; }
 };
 
+const isActiveFlat = (f) => f?.status !== 'inactive';
+
 const toMonthKey = (date) =>
   date.toLocaleString('default', { month: 'long', year: 'numeric' });
 
@@ -60,11 +62,11 @@ const isMonthOnOrAfterStart = (monthLabel) => {
 // ── Add Pending Modal ─────────────────────────────────────────
 function AddPendingModal({ flats, onSave, onClose }) {
   const currentMonthInput = format(new Date(), 'yyyy-MM');
-  const [flatId, setFlatId]       = useState('');
-  const [month, setMonth]         = useState(currentMonthInput);
+  const [flatId, setFlatId] = useState('');
+  const [month, setMonth] = useState(currentMonthInput);
   const [amountDue, setAmountDue] = useState('');
-  const [notes, setNotes]         = useState('');
-  const [saving, setSaving]       = useState(false);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -77,9 +79,9 @@ function AddPendingModal({ flats, onSave, onClose }) {
     await onSave({
       flatId,
       flatNumber: flat?.flatNumber || '',
-      ownerName:  flat?.ownerName  || '',
-      month:      toMonthLabel(month),
-      amountDue:  Number(amountDue),
+      ownerName: flat?.ownerName || '',
+      month: toMonthLabel(month),
+      amountDue: Number(amountDue),
       notes,
     });
     setSaving(false);
@@ -181,7 +183,7 @@ function TrendChart({ data, currency, onSelect }) {
       <div className="px-6 py-5">
         <div className="flex items-end gap-1.5 h-40">
           {data.map((d, i) => {
-            const pct        = max > 0 ? (d.amount / max) * 100 : 0;
+            const pct = max > 0 ? (d.amount / max) * 100 : 0;
             const isSelected = d.isSelected;
             return (
               <div
@@ -200,20 +202,18 @@ function TrendChart({ data, currency, onSelect }) {
                   </div>
                   {/* Bar */}
                   <div
-                    className={`w-full rounded-t-md transition-all duration-200 ${
-                      isSelected
-                        ? 'bg-[#e2b04a]'
-                        : d.amount > 0
+                    className={`w-full rounded-t-md transition-all duration-200 ${d.isSelected
+                      ? 'bg-[#e2b04a]'
+                      : d.amount > 0
                         ? 'bg-[#1a1a2e]/20 group-hover:bg-[#1a1a2e]/40'
                         : 'bg-gray-100 group-hover:bg-gray-200'
-                    }`}
+                      }`}
                     style={{ height: `${Math.max(pct, d.amount > 0 ? 4 : 2)}%` }}
                   />
                 </div>
                 <span
-                  className={`text-[9px] font-medium transition-colors ${
-                    isSelected ? 'text-[#b8861f]' : 'text-gray-400 group-hover:text-gray-600'
-                  }`}
+                  className={`text-[9px] font-medium transition-colors ${isSelected ? 'text-[#b8861f]' : 'text-gray-400 group-hover:text-gray-600'
+                    }`}
                 >
                   {d.shortLabel}
                 </span>
@@ -240,12 +240,12 @@ export default function ReportsPage() {
 
   const currentMonthInput = format(new Date(), 'yyyy-MM');
   const [selectedMonth, setSelectedMonth] = useState(currentMonthInput);
-  const [receipts, setReceipts]           = useState([]);
-  const [flats, setFlats]                 = useState([]);
-  const [settings, setSettings]           = useState(null);
-  const [pendingList, setPendingList]     = useState([]);
-  const [loading, setLoading]             = useState(true);
-  const [addOpen, setAddOpen]             = useState(false);
+  const [receipts, setReceipts] = useState([]);
+  const [flats, setFlats] = useState([]);
+  const [settings, setSettings] = useState(null);
+  const [pendingList, setPendingList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
 
   const load = async () => {
     if (!user) return;
@@ -264,8 +264,11 @@ export default function ReportsPage() {
 
   useEffect(() => { load(); }, [user]);
 
-  const currency           = settings?.currency || '₹';
+  const currency = settings?.currency || '₹';
   const selectedMonthLabel = toMonthLabel(selectedMonth);
+
+  // ── Active flats only (vacated/inactive flats never count toward pending/reports) ──
+  const activeFlats = useMemo(() => flats.filter(isActiveFlat), [flats]);
 
   // ── Month receipts (by PAYMENT DATE) ─────────────────────
   // Used for: receipt list display, total collected, flats paid count, chart
@@ -287,12 +290,12 @@ export default function ReportsPage() {
     monthReceipts.forEach((r) => {
       if (!map.has(r.flatId)) {
         map.set(r.flatId, {
-          flatNumber:    r.flatNumber,
-          ownerName:     r.ownerName,
+          flatNumber: r.flatNumber,
+          ownerName: r.ownerName,
           receiptNumber: r.receiptNumber,
           modeOfPayment: r.modeOfPayment,
-          paymentDate:   r.paymentDate,
-          total:         0,
+          paymentDate: r.paymentDate,
+          total: 0,
         });
       }
       map.get(r.flatId).total += Number(r.paidAmount || 0);
@@ -312,8 +315,8 @@ export default function ReportsPage() {
     [monthReceipts]
   );
 
-  const collectionPct = flats.length > 0
-    ? Math.round((receiptsByFlat.length / flats.length) * 100)
+  const collectionPct = activeFlats.length > 0
+    ? Math.round((receiptsByFlat.length / activeFlats.length) * 100)
     : 0;
 
   // ── Recorded pending for selected month ───────────────────
@@ -329,16 +332,16 @@ export default function ReportsPage() {
 
   // ── Flats with no receipt AND no pending entry this month ─
   // Uses BILLING MONTH to check if a flat has paid for that period.
-  // Only shown for April 2026 onwards.
+  // Only shown for April 2026 onwards. Active flats only.
   const unpaidFlats = useMemo(() => {
     if (!isMonthOnOrAfterStart(selectedMonthLabel)) return [];
     const pendingFlatIds = new Set(monthPending.map((p) => p.flatId));
-    return flats
+    return activeFlats
       .filter((f) => !billingMonthPaidFlatIds.has(f.id) && !pendingFlatIds.has(f.id))
       .sort((a, b) =>
         (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true })
       );
-  }, [flats, billingMonthPaidFlatIds, monthPending, selectedMonthLabel]);
+  }, [activeFlats, billingMonthPaidFlatIds, monthPending, selectedMonthLabel]);
 
   // ── Trend data (12 months, grouped by PAYMENT DATE) ──────
   const trendData = useMemo(() => {
@@ -348,7 +351,7 @@ export default function ReportsPage() {
         .filter((r) => paymentMonthLabel(r) === key)
         .reduce((s, r) => s + Number(r.paidAmount || 0), 0);
       return {
-        label:      key,
+        label: key,
         shortLabel: shortLabel(key),
         monthInput: format(parse(key, 'MMMM yyyy', new Date()), 'yyyy-MM'),
         amount,
@@ -440,15 +443,14 @@ export default function ReportsPage() {
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Flats Paid</p>
                 <p className="text-2xl font-bold text-[#1a1a2e]">
                   {receiptsByFlat.length}
-                  <span className="text-base text-gray-300">/{flats.length}</span>
+                  <span className="text-base text-gray-300">/{activeFlats.length}</span>
                 </p>
                 <p className="text-xs text-gray-400 mt-1">{collectionPct}% collected</p>
               </div>
 
               <div
-                className={`rounded-2xl border shadow-sm p-5 ${
-                  monthPending.length > 0 ? 'bg-orange-50 border-orange-100' : 'bg-white border-gray-100'
-                }`}
+                className={`rounded-2xl border shadow-sm p-5 ${monthPending.length > 0 ? 'bg-orange-50 border-orange-100' : 'bg-white border-gray-100'
+                  }`}
               >
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Pending</p>
                 <p className={`text-2xl font-bold ${monthPending.length > 0 ? 'text-orange-600' : 'text-[#1a1a2e]'}`}>
@@ -462,16 +464,14 @@ export default function ReportsPage() {
               </div>
 
               <div
-                className={`rounded-2xl border shadow-sm p-5 ${
-                  showUnpaidSection && unpaidFlats.length > 0
-                    ? 'bg-red-50 border-red-100'
-                    : 'bg-white border-gray-100'
-                }`}
+                className={`rounded-2xl border shadow-sm p-5 ${showUnpaidSection && unpaidFlats.length > 0
+                  ? 'bg-red-50 border-red-100'
+                  : 'bg-white border-gray-100'
+                  }`}
               >
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Not Paid</p>
-                <p className={`text-2xl font-bold ${
-                  showUnpaidSection && unpaidFlats.length > 0 ? 'text-red-500' : 'text-[#1a1a2e]'
-                }`}>
+                <p className={`text-2xl font-bold ${showUnpaidSection && unpaidFlats.length > 0 ? 'text-red-500' : 'text-[#1a1a2e]'
+                  }`}>
                   {showUnpaidSection ? unpaidFlats.length : '—'}
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
@@ -622,13 +622,13 @@ export default function ReportsPage() {
                         ? 'All flats accounted for'
                         : 'No pending entries'
                       : [
-                          monthPending.length > 0 &&
-                            `${monthPending.length} recorded · ${currency}${totalDue.toLocaleString('en-IN')} due`,
-                          unpaidFlats.length > 0 &&
-                            `${unpaidFlats.length} unaccounted`,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
+                        monthPending.length > 0 &&
+                        `${monthPending.length} recorded · ${currency}${totalDue.toLocaleString('en-IN')} due`,
+                        unpaidFlats.length > 0 &&
+                        `${unpaidFlats.length} unaccounted`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                   </p>
                 </div>
                 <button
@@ -754,7 +754,7 @@ export default function ReportsPage() {
 
         {addOpen && (
           <AddPendingModal
-            flats={flats}
+            flats={activeFlats}
             onSave={handleAddPending}
             onClose={() => setAddOpen(false)}
           />

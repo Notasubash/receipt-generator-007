@@ -20,17 +20,20 @@ const formatDate = (str) => {
   catch { return str; }
 };
 
+// add helper near top
+const isActiveFlat = (f) => f?.status !== 'inactive';
+
 export default function DashboardPage() {
   const { getDashboardStats, getSettings, addPendingFlat } = useFirestore();
   const { user } = useAuth();
-  const [stats, setStats]           = useState(null);
-  const [settings, setSettings]     = useState(null);
-  const [loading, setLoading]       = useState(true);
+  const [stats, setStats] = useState(null);
+  const [settings, setSettings] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [pendingOpen, setPendingOpen] = useState(false);
   // flat being saved to pending (opens mini-modal)
   const [savingFlat, setSavingFlat] = useState(null);
   // set of flatIds already saved this session
-  const [savedIds, setSavedIds]     = useState(new Set());
+  const [savedIds, setSavedIds] = useState(new Set());
 
   useEffect(() => {
     if (!user) return;
@@ -51,7 +54,9 @@ export default function DashboardPage() {
       .filter((r) => r.month === currentMonth)
       .map((r) => r.flatId)
   );
-  const pendingFlats = (stats?.flats || []).filter((f) => !paidFlatIds.has(f.id));
+  const pendingFlats = (stats?.flats || [])
+    .filter(isActiveFlat)
+    .filter((f) => !paidFlatIds.has(f.id));
 
   const handleSaveToPending = async (data) => {
     try {
@@ -185,9 +190,9 @@ export default function DashboardPage() {
             {/* Quick links */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
-                { href: '/flats',        label: 'Manage Flats',  desc: 'Add or edit flat details',      icon: Building2 },
-                { href: '/receipts/new', label: 'New Receipt',   desc: 'Generate one or multiple',      icon: Plus },
-                { href: '/reports',      label: 'Reports',       desc: 'Month-wise collection report',  icon: TrendingUp },
+                { href: '/flats', label: 'Manage Flats', desc: 'Add or edit flat details', icon: Building2 },
+                { href: '/receipts/new', label: 'New Receipt', desc: 'Generate one or multiple', icon: Plus },
+                { href: '/reports', label: 'Reports', desc: 'Month-wise collection report', icon: TrendingUp },
               ].map(({ href, label, desc, icon: Icon }) => (
                 <Link key={href} href={href} className="bg-white border border-gray-100 rounded-2xl p-5 flex items-center gap-4 hover:border-[#e2b04a] hover:shadow-sm transition-all card-lift">
                   <div className="w-10 h-10 bg-[#fdf0d5] rounded-xl flex items-center justify-center">
@@ -258,11 +263,10 @@ export default function DashboardPage() {
                       <button
                         onClick={() => !isSaved && setSavingFlat(flat)}
                         title={isSaved ? 'Saved to pending' : 'Save to pending list'}
-                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
-                          isSaved
-                            ? 'bg-[#fdf0d5] text-[#b8861f] cursor-default'
-                            : 'bg-gray-100 text-gray-500 hover:bg-[#fdf0d5] hover:text-[#b8861f]'
-                        }`}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${isSaved
+                          ? 'bg-[#fdf0d5] text-[#b8861f] cursor-default'
+                          : 'bg-gray-100 text-gray-500 hover:bg-[#fdf0d5] hover:text-[#b8861f]'
+                          }`}
                       >
                         {isSaved ? <Check size={12} /> : <BookmarkPlus size={12} />}
                         {isSaved ? 'Saved' : 'Pending'}
