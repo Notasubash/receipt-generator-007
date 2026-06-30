@@ -51,15 +51,13 @@ const paymentMonthLabel = (receipt) => {
   }
 };
 
-// April 2026 is the earliest month to check unpaid flats from
-const UNPAID_CHECK_START = parse('April 2026', 'MMMM yyyy', new Date());
+// Fallback "yyyy-MM" start month for flats that don't have a startMonth set
+// (e.g. flats created before this field existed). Matches the previous
+// hardcoded April 2026 cutoff.
+const FALLBACK_START_MONTH = '2026-04';
 
-const isMonthOnOrAfterStart = (monthLabel) => {
-  try {
-    const d = parse(monthLabel, 'MMMM yyyy', new Date());
-    return d >= UNPAID_CHECK_START;
-  } catch { return false; }
-};
+// A flat's own tracking start month, as 'yyyy-MM'
+const flatStartMonthInput = (flat) => flat?.startMonth || FALLBACK_START_MONTH;
 
 // ── Add Pending Modal ─────────────────────────────────────────
 function AddPendingModal({ flats, onSave, onClose }) {
@@ -297,10 +295,14 @@ export default function ReportsPage() {
           receiptNumber: r.receiptNumber,
           modeOfPayment: r.modeOfPayment,
           paymentDate: r.paymentDate,
+          remarks: r.remarks || '',
           total: 0,
         });
       }
-      map.get(r.flatId).total += Number(r.paidAmount || 0);
+      const row = map.get(r.flatId);
+      row.total += Number(r.paidAmount || 0);
+      // Keep the latest non-empty remarks if multiple receipts roll into one row
+      if (r.remarks) row.remarks = r.remarks;
     });
     return Array.from(map.values()).sort((a, b) => {
       // Sort by receipt number numerically
@@ -333,16 +335,19 @@ export default function ReportsPage() {
 
   // ── Flats with no receipt AND no pending entry this month ─
   // Uses BILLING MONTH to check if a flat has paid for that period.
-  // Only shown for April 2026 onwards. Active flats only.
+  // Each flat is only checked from ITS OWN startMonth onwards (falls back to
+  // April 2026 for flats that don't have a startMonth set). Active flats only.
   const unpaidFlats = useMemo(() => {
-    if (!isMonthOnOrAfterStart(selectedMonthLabel)) return [];
     const pendingFlatIds = new Set(monthPending.map((p) => p.flatId));
     return activeFlats
-      .filter((f) => !billingMonthPaidFlatIds.has(f.id) && !pendingFlatIds.has(f.id))
+      .filter((f) => {
+        if (selectedMonth < flatStartMonthInput(f)) return false;
+        return !billingMonthPaidFlatIds.has(f.id) && !pendingFlatIds.has(f.id);
+      })
       .sort((a, b) =>
         (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true })
       );
-  }, [activeFlats, billingMonthPaidFlatIds, monthPending, selectedMonthLabel]);
+  }, [activeFlats, billingMonthPaidFlatIds, monthPending, selectedMonth]);
 
   // ── Trend data (12 months, grouped by PAYMENT DATE) ──────
   const trendData = useMemo(() => {
@@ -386,33 +391,27 @@ export default function ReportsPage() {
     );
   }, [monthPending, unpaidFlats, selectedMonthLabel]);
 
-  // ── ALL months from April 2026 through the current month ──
-  // Used to build a full, all-time arrears list for the PDF (not just the selected month).
-  const allMonthsSinceStart = useMemo(() => {
-    const months = [];
-    let cursor = new Date(UNPAID_CHECK_START.getFullYear(), UNPAID_CHECK_START.getMonth(), 1);
-    const now = new Date();
-    const last = new Date(now.getFullYear(), now.getMonth(), 1);
-    while (cursor <= last) {
-      months.push(toMonthKey(cursor));
-      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
-    }
-    return months;
-  }, []);
-
-  // "Not Paid" flats for EVERY month since April 2026 (no receipt for that billing
-  // month AND no pending entry recorded for that flat/month combination).
+  // "Not Paid" flats for EVERY month, walked from EACH FLAT'S OWN startMonth
+  // through the current month (no receipt for that billing month AND no
+  // pending entry recorded for that flat/month combination).
   const allUnpaidRows = useMemo(() => {
     const rows = [];
-    allMonthsSinceStart.forEach((monthLabel) => {
-      const billingPaidIds = new Set(
-        receipts.filter((r) => r.month === monthLabel).map((r) => r.flatId)
-      );
-      const pendingIdsForMonth = new Set(
-        pendingList.filter((p) => p.month === monthLabel).map((p) => p.flatId)
-      );
-      activeFlats.forEach((f) => {
-        if (!billingPaidIds.has(f.id) && !pendingIdsForMonth.has(f.id)) {
+    const now = new Date();
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    activeFlats.forEach((f) => {
+      const startInput = flatStartMonthInput(f);
+      let cursor;
+      try {
+        cursor = parse(`${startInput}-01`, 'yyyy-MM-dd', new Date());
+      } catch {
+        return;
+      }
+      while (cursor <= lastMonthDate) {
+        const monthLabel = toMonthKey(cursor);
+        const isPaidThisMonth = receipts.some((r) => r.month === monthLabel && r.flatId === f.id);
+        const isPendingThisMonth = pendingList.some((p) => p.month === monthLabel && p.flatId === f.id);
+        if (!isPaidThisMonth && !isPendingThisMonth) {
           rows.push({
             id: `unpaid-${f.id}-${monthLabel}`,
             flatNumber: f.flatNumber,
@@ -422,10 +421,11 @@ export default function ReportsPage() {
             status: 'Not Paid',
           });
         }
-      });
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+      }
     });
     return rows;
-  }, [allMonthsSinceStart, receipts, pendingList, activeFlats]);
+  }, [activeFlats, receipts, pendingList]);
 
   // ALL recorded pending entries (every month, not just the selected one) + every
   // "Not Paid" row computed above. This is what gets printed in the PDF.
@@ -514,7 +514,7 @@ export default function ReportsPage() {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text(`Maintenance Fees Collection Report — ${selectedMonthLabel}`, pageWidth / 2, y, { align: 'center' });
+    doc.text(`Maintenance Charges Collection Report — ${selectedMonthLabel}`, pageWidth / 2, y, { align: 'center' });
     y += 24;
 
     // ── Paid Details table (sorted by receipt number) ──
@@ -528,15 +528,16 @@ export default function ReportsPage() {
 
     autoTable(doc, {
       startY: y,
-      head: [['Receipt No.', 'Date', 'Flat Number', 'Resident/Shop Name', 'Amount\n(in Rs.)']],
+      head: [['Receipt No.', 'Date', 'Flat Number', 'Resident/Shop Name', 'Remarks', 'Amount\n(in Rs.)']],
       body: sortedReceiptsByFlat.map((r) => [
         r.receiptNumber || '—',
         formatDate(r.paymentDate),
         r.flatNumber,
         r.ownerName,
+        r.remarks || '—',
         r.total.toLocaleString('en-IN'),
-      ]),
-      foot: [['', '', '', 'Total', `Rs. ${totalCollected.toLocaleString('en-IN')}`]],
+      ]), foot: [['', '', '', '', 'Total', `${totalCollected.toLocaleString('en-IN')}`]],
+      showFoot: 'lastPage',   // ← add this
       theme: 'grid',
       headStyles: {
         fillColor: [26, 26, 46],
@@ -557,19 +558,21 @@ export default function ReportsPage() {
         lineWidth: 0.5,
       },
       columnStyles: {
-        0: { cellWidth: 55, halign: 'center' },
-        1: { cellWidth: 65, halign: 'center' },
-        2: { cellWidth: 65, halign: 'center' },
-        4: { cellWidth: 70, halign: 'right', fontStyle: 'bold' },
+        0: { cellWidth: 55, halign: 'center' }, // Receipt
+        1: { cellWidth: 60, halign: 'center' }, // Date
+        2: { cellWidth: 55, halign: 'center' }, // Flat
+        3: { cellWidth: 115 },                  // Resident/Shop Name (reduced)
+        4: { cellWidth: 140, halign: 'left' },  // Remarks (increased)
+        5: { cellWidth: 50, halign: 'right', fontStyle: 'bold' }, // Amount
       },
       alternateRowStyles: { fillColor: [250, 250, 252] },
-      styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5 },
+      styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5, valign: 'middle' },
       margin: { left: 40, right: 40 },
     });
 
     y = doc.lastAutoTable.finalY + 28;
 
-    // ── ALL-TIME Pending / Not Paid table (every month since Apr 2026, not just selected) ──
+    // ── ALL-TIME Pending / Not Paid table (every month since each flat's own start, not just selected) ──
     if (y > doc.internal.pageSize.getHeight() - 100) {
       doc.addPage();
       y = 40;
@@ -622,7 +625,12 @@ export default function ReportsPage() {
     catch { return str; }
   };
 
-  const showUnpaidSection = isMonthOnOrAfterStart(selectedMonthLabel);
+  // The "Not Paid" section is relevant for the selected month as long as at
+  // least one active flat's own startMonth is on or before the selected month.
+  const showUnpaidSection = useMemo(
+    () => activeFlats.some((f) => selectedMonth >= flatStartMonthInput(f)),
+    [activeFlats, selectedMonth]
+  );
   const allClear = monthPending.length === 0 && unpaidFlats.length === 0;
 
   // ─────────────────────────────────────────────────────────
@@ -722,7 +730,7 @@ export default function ReportsPage() {
                     ? unpaidFlats.length === 0
                       ? 'All accounted for'
                       : `flat${unpaidFlats.length !== 1 ? 's' : ''} unaccounted`
-                    : 'from Apr 2026'}
+                    : 'none tracked yet'}
                 </p>
               </div>
             </div>
@@ -776,6 +784,9 @@ export default function ReportsPage() {
                             <p className="text-xs text-gray-400">
                               {r.modeOfPayment} · {formatDate(r.paymentDate)}
                             </p>
+                            {r.remarks && (
+                              <p className="text-xs text-gray-400 italic truncate max-w-[180px]">{r.remarks}</p>
+                            )}
                           </div>
                         </div>
                         <div className="text-right shrink-0">
@@ -807,6 +818,7 @@ export default function ReportsPage() {
                           <th className="text-left px-6 py-3">Mode</th>
                           <th className="text-left px-6 py-3">Date</th>
                           <th className="text-right px-6 py-3">Amount</th>
+                          <th className="text-left px-6 py-3">Remarks</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -827,6 +839,9 @@ export default function ReportsPage() {
                             <td className="px-6 py-3 text-right font-semibold text-[#1a1a2e]">
                               {currency}{r.total.toLocaleString('en-IN')}
                             </td>
+                            <td className="px-6 py-3 text-gray-400 text-xs max-w-[180px] truncate">
+                              {r.remarks || '—'}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -841,6 +856,7 @@ export default function ReportsPage() {
                           <td className="px-6 py-3 text-right font-bold text-[#1a1a2e]">
                             {currency}{totalCollected.toLocaleString('en-IN')}
                           </td>
+                          <td className="px-6 py-3" />
                         </tr>
                       </tfoot>
                     </table>
@@ -935,7 +951,7 @@ export default function ReportsPage() {
                 </>
               )}
 
-              {/* Flats with no receipt and no pending entry — only from Apr 2026 */}
+              {/* Flats with no receipt and no pending entry — only from each flat's own start month */}
               {showUnpaidSection && unpaidFlats.length > 0 && (
                 <>
                   <div className={`px-6 py-2 border-b border-red-100 bg-red-50/60 ${monthPending.length > 0 ? 'border-t border-gray-100' : ''}`}>

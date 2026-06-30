@@ -14,9 +14,16 @@ import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { Plus, Building2, Search, Pencil, Trash2, ChevronRight, UserX, UserCheck, Eye, EyeOff } from 'lucide-react';
 
+// 'yyyy-MM' for the current month — used to default new flats' startMonth
+const currentMonthInput = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
 const EMPTY_FLAT = {
   flatNumber: '', ownerName: '',
-  floor: '', type: '', ownershipType: 'owner', notes: '', status: 'active'
+  floor: '', type: '', ownershipType: 'owner', notes: '', status: 'active',
+  startMonth: '', // 'yyyy-MM' — the billing month this flat starts being tracked for "Not Paid"
 };
 
 const FLAT_TYPES = ['1BHK', '2BHK', '3BHK', '4BHK', 'Commercial'];
@@ -62,8 +69,12 @@ export default function FlatsPage() {
 
   const inactiveCount = flats.filter((f) => !isActiveFlat(f)).length;
 
-  const openAdd = () => { setEditFlat(null); setForm(EMPTY_FLAT); setModalOpen(true); };
-  const openEdit = (flat) => { setEditFlat(flat); setForm(flat); setModalOpen(true); };
+  const openAdd = () => {
+    setEditFlat(null);
+    setForm({ ...EMPTY_FLAT, startMonth: currentMonthInput() });
+    setModalOpen(true);
+  };
+  const openEdit = (flat) => { setEditFlat(flat); setForm({ ...EMPTY_FLAT, ...flat }); setModalOpen(true); };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -134,11 +145,10 @@ export default function FlatsPage() {
             <div className="flex gap-2 items-center">
               <button
                 onClick={() => setShowInactive((v) => !v)}
-                className={`flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-sm font-medium rounded-xl border transition-colors whitespace-nowrap ${
-                  showInactive
+                className={`flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-sm font-medium rounded-xl border transition-colors whitespace-nowrap ${showInactive
                     ? 'bg-[#1a1a2e] text-[#e2b04a] border-[#1a1a2e]'
                     : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
-                }`}
+                  }`}
               >
                 {showInactive ? <Eye size={15} /> : <EyeOff size={15} />}
                 {showInactive ? 'Hide Inactive' : 'Show Inactive'}
@@ -176,9 +186,8 @@ export default function FlatsPage() {
                     <div
                       key={flat.id}
                       onClick={() => router.push(`/flats/${flat.id}`)}
-                      className={`bg-white rounded-2xl border shadow-sm p-4 flex items-center gap-4 active:bg-[#fdf6ec] transition-colors cursor-pointer ${
-                        active ? 'border-gray-100' : 'border-gray-100 opacity-60'
-                      }`}
+                      className={`bg-white rounded-2xl border shadow-sm p-4 flex items-center gap-4 active:bg-[#fdf6ec] transition-colors cursor-pointer ${active ? 'border-gray-100' : 'border-gray-100 opacity-60'
+                        }`}
                     >
                       {/* Avatar */}
                       <div className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center ${active ? 'bg-[#1a1a2e]' : 'bg-gray-300'}`}>
@@ -211,11 +220,10 @@ export default function FlatsPage() {
                       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => handleToggleStatus(flat)}
-                          className={`p-2 rounded-lg transition-colors ${
-                            active
+                          className={`p-2 rounded-lg transition-colors ${active
                               ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'
                               : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
-                          }`}
+                            }`}
                           aria-label={active ? 'Mark inactive' : 'Mark active'}
                           title={active ? 'Mark inactive' : 'Mark active'}
                         >
@@ -302,11 +310,10 @@ export default function FlatsPage() {
                               <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                                 <button
                                   onClick={() => handleToggleStatus(flat)}
-                                  className={`p-1.5 rounded-lg transition-colors ${
-                                    active
+                                  className={`p-1.5 rounded-lg transition-colors ${active
                                       ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'
                                       : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
-                                  }`}
+                                    }`}
                                   title={active ? 'Mark inactive' : 'Mark active'}
                                 >
                                   {active ? <UserX size={14} /> : <UserCheck size={14} />}
@@ -377,14 +384,30 @@ export default function FlatsPage() {
                 <option value="tenant">Tenant</option>
               </Select>
             </div>
-            <Select
-              label="Status"
-              value={form.status || 'active'}
-              onChange={(e) => set('status', e.target.value)}
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">
+                  Start Month
+                </label>
+                <input
+                  type="month"
+                  value={form.startMonth || ''}
+                  onChange={(e) => set('startMonth', e.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none"
+                />
+                <p className="text-[10px] text-gray-400">
+                  First billing month tracked for "Not Paid" in Reports
+                </p>
+              </div>
+              <Select
+                label="Status"
+                value={form.status || 'active'}
+                onChange={(e) => set('status', e.target.value)}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </Select>
+            </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">Notes</label>
               <textarea
