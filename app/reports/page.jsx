@@ -7,10 +7,12 @@ import { useFirestore } from '../../hooks/useFirestore';
 import { useAuth } from '../../context/AuthContext';
 import {
   FileText, AlertCircle,
-  Plus, Trash2, X, ChevronDown, CheckCircle2, Clock
+  Plus, Trash2, X, ChevronDown, CheckCircle2, Clock, Download
 } from 'lucide-react';
 import { format, parse, subMonths } from 'date-fns';
 import toast from 'react-hot-toast';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // ── helpers ────────────────────────────────────────────────────
 const toMonthLabel = (str) => {
@@ -360,6 +362,31 @@ export default function ReportsPage() {
     });
   }, [receipts, selectedMonthLabel]);
 
+  // ── Combined arrears for the month: recorded "Pending" entries + ─
+  // "Not Paid" (no receipt, no pending entry) flats — used for the
+  // Pending section table and the downloaded PDF.
+  const combinedArrears = useMemo(() => {
+    const pendingRows = monthPending.map((p) => ({
+      id: `pending-${p.id}`,
+      flatNumber: p.flatNumber,
+      ownerName: p.ownerName,
+      month: p.month,
+      amountDue: Number(p.amountDue || 0),
+      status: 'Pending',
+    }));
+    const unpaidRows = unpaidFlats.map((f) => ({
+      id: `unpaid-${f.id}`,
+      flatNumber: f.flatNumber,
+      ownerName: f.ownerName,
+      month: selectedMonthLabel,
+      amountDue: null,
+      status: 'Not Paid',
+    }));
+    return [...pendingRows, ...unpaidRows].sort((a, b) =>
+      (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true })
+    );
+  }, [monthPending, unpaidFlats, selectedMonthLabel]);
+
   // ── Handlers ──────────────────────────────────────────────
   const handleAddPending = async (data) => {
     try {
@@ -382,6 +409,137 @@ export default function ReportsPage() {
     }
   };
 
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = 40;
+
+    // ── Header ──
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(settings?.apartmentName || 'Apartment', pageWidth / 2, y, { align: 'center' });
+    y += 18;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    if (settings?.address) {
+      doc.text(settings.address, pageWidth / 2, y, { align: 'center' });
+      y += 14;
+    }
+    const contactLine = [
+      settings?.phone ? `Phone: ${settings.phone}` : '',
+      settings?.email ? `Email: ${settings.email}` : '',
+    ].filter(Boolean).join('   ·   ');
+    if (contactLine) {
+      doc.text(contactLine, pageWidth / 2, y, { align: 'center' });
+      y += 14;
+    }
+
+    doc.setDrawColor(26, 26, 46);
+    doc.setLineWidth(1);
+    doc.line(40, y, pageWidth - 40, y);
+    y += 20;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(`Maintenance Fees Collection Report — ${selectedMonthLabel}`, pageWidth / 2, y, { align: 'center' });
+    y += 24;
+
+    // ── Paid Details table ──
+    doc.setFontSize(11);
+    doc.text('Paid Details', 40, y);
+    y += 8;
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Receipt No.', 'Date', 'Flat Number', 'Resident/Shop Name', 'Amount']],
+      body: receiptsByFlat.map((r) => [
+        r.receiptNumber || '—',
+        formatDate(r.paymentDate),
+        r.flatNumber,
+        r.ownerName,
+        `Rs. ${r.total.toLocaleString('en-IN')}`,
+      ]),
+      foot: [['', '', '', 'Total', `Rs. ${totalCollected.toLocaleString('en-IN')}`]],
+      theme: 'grid',
+      headStyles: {
+        fillColor: [26, 26, 46],
+        textColor: [226, 176, 74],
+        fontStyle: 'bold',
+        fontSize: 9,
+        halign: 'center',
+        valign: 'middle',        // ← add this
+        lineColor: [26, 26, 46],
+        lineWidth: 0.5,
+      },
+      footStyles: {
+        fillColor: [245, 245, 245],
+        textColor: [26, 26, 46],
+        fontStyle: 'bold',
+        halign: 'right',         // ← add this (right-aligns all foot cells)
+        lineColor: [220, 220, 220],
+        lineWidth: 0.5,
+      },
+      columnStyles: {
+        0: { cellWidth: 55, halign: 'center' },
+        1: { cellWidth: 65, halign: 'center' },
+        2: { cellWidth: 65, halign: 'center' },
+        4: { halign: 'right', fontStyle: 'bold' },
+        4: { cellWidth: 70, halign: 'right', fontStyle: 'bold' },   // ← add cellWidth: 70
+      },
+      alternateRowStyles: { fillColor: [250, 250, 252] },
+      styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5 },
+      margin: { left: 40, right: 40 },
+    });
+
+    y = doc.lastAutoTable.finalY + 28;
+
+    // ── Pending / Not Paid table ──
+    if (y > doc.internal.pageSize.getHeight() - 100) {
+      doc.addPage();
+      y = 40;
+    }
+    doc.setFontSize(11);
+    doc.text('Arrears for the month', 40, y);
+    y += 8;
+
+    if (combinedArrears.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.text(`No arrears for ${selectedMonthLabel}.`, 40, y + 14);
+    } else {
+      autoTable(doc, {
+        startY: y,
+        head: [['Flat Number', 'Resident/Shop Name', 'Month', 'Status']],
+        body: combinedArrears.map((row) => [
+          row.flatNumber,
+          row.ownerName,
+          row.month,
+          row.status,
+        ]),
+        theme: 'grid',
+        headStyles: {
+          fillColor: [26, 26, 46],
+          textColor: [226, 176, 74],
+          fontStyle: 'bold',
+          fontSize: 9,
+          halign: 'center',
+          lineColor: [26, 26, 46],
+          lineWidth: 0.5,
+        },
+        columnStyles: {
+          0: { cellWidth: 65, halign: 'center' },
+        },
+        alternateRowStyles: { fillColor: [250, 250, 252] },
+        styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5 },
+        margin: { left: 40, right: 40 },
+      });
+    }
+
+    const fileMonth = selectedMonthLabel.replace(/\s+/g, '_');
+    doc.save(`Maintenance_Report_${fileMonth}.pdf`);
+  };
+
   const formatDate = (str) => {
     if (!str) return '—';
     try { return format(parse(str, 'yyyy-MM-dd', new Date()), 'dd MMM yyyy'); }
@@ -395,6 +553,7 @@ export default function ReportsPage() {
   return (
     <ProtectedRoute>
       <Layout title="Reports">
+
         {loading ? (
           <div className="flex justify-center py-24">
             <div className="w-8 h-8 border-2 border-[#e2b04a] border-t-transparent rounded-full animate-spin" />
@@ -415,17 +574,25 @@ export default function ReportsPage() {
                   Month-wise collection &amp; pending overview
                 </p>
               </div>
-              <div className="relative">
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-[#1a1a2e] focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none bg-white shadow-sm appearance-none cursor-pointer"
-                />
-                <ChevronDown
-                  size={15}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-                />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDownloadPdf}
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border border-gray-200 text-[#1a1a2e] rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  <Download size={15} /> Download PDF
+                </button>
+                <div className="relative">
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-[#1a1a2e] focus:border-[#e2b04a] focus:ring-2 focus:ring-[#e2b04a]/20 outline-none bg-white shadow-sm appearance-none cursor-pointer"
+                  />
+                  <ChevronDown
+                    size={15}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                  />
+                </div>
               </div>
             </div>
 
