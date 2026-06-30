@@ -575,7 +575,7 @@ export default function ReportsPage() {
       y = 40;
     }
     doc.setFontSize(11);
-    doc.text('All Outstanding Arrears (Since Apr 2026)', 40, y);
+    doc.text('All Outstanding Arrears', 40, y);
     y += 20;
 
     if (allArrears.length === 0) {
