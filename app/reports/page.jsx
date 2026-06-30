@@ -528,16 +528,16 @@ export default function ReportsPage() {
 
     autoTable(doc, {
       startY: y,
-      head: [['Receipt No.', 'Date', 'Flat Number', 'Resident/Shop Name', 'Remarks', 'Amount\n(in Rs.)']],
+      head: [['Receipt No.', 'Date', 'Flat Number', 'Resident/Shop Name', 'Amount\n(in Rs.)', 'Remarks']],
       body: sortedReceiptsByFlat.map((r) => [
         r.receiptNumber || '—',
         formatDate(r.paymentDate),
         r.flatNumber,
         r.ownerName,
-        r.remarks || '—',
         r.total.toLocaleString('en-IN'),
-      ]), foot: [['', '', '', '', 'Total', `${totalCollected.toLocaleString('en-IN')}`]],
-      showFoot: 'lastPage',   // ← add this
+        r.remarks || '—',
+      ]),
+      foot: [['', '', '', 'Total', `${totalCollected.toLocaleString('en-IN')}`, '']],
       theme: 'grid',
       headStyles: {
         fillColor: [26, 26, 46],
@@ -561,9 +561,9 @@ export default function ReportsPage() {
         0: { cellWidth: 55, halign: 'center' }, // Receipt
         1: { cellWidth: 60, halign: 'center' }, // Date
         2: { cellWidth: 55, halign: 'center' }, // Flat
-        3: { cellWidth: 115 },                  // Resident/Shop Name (reduced)
-        4: { cellWidth: 140, halign: 'left' },  // Remarks (increased)
-        5: { cellWidth: 50, halign: 'right', fontStyle: 'bold' }, // Amount
+        3: { cellWidth: 90 },                  // Resident/Shop Name (reduced)
+        4: { cellWidth: 45, halign: 'right', fontStyle: 'bold' }, // Amount
+        5: { cellWidth: 150, halign: 'left' },  // Remarks (increased)
       },
       alternateRowStyles: { fillColor: [250, 250, 252] },
       styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5, valign: 'middle' },
