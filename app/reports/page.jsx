@@ -286,7 +286,7 @@ export default function ReportsPage() {
     [receipts, selectedMonthLabel]
   );
 
-  // Group receipts by flat (payment-date based), sorted by paymentDate ascending
+  // Group receipts by flat (payment-date based), sorted by receipt number ascending
   const receiptsByFlat = useMemo(() => {
     const map = new Map();
     monthReceipts.forEach((r) => {
@@ -303,13 +303,12 @@ export default function ReportsPage() {
       map.get(r.flatId).total += Number(r.paidAmount || 0);
     });
     return Array.from(map.values()).sort((a, b) => {
-      const da = a.paymentDate || '';
-      const db = b.paymentDate || '';
-      if (da < db) return -1;
-      if (da > db) return 1;
-      // secondary: flat number if same date
-      return (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true });
+      // Sort by receipt number numerically
+      const ra = Number(a.receiptNumber) || 0;
+      const rb = Number(b.receiptNumber) || 0;
+      return ra - rb;
     });
+
   }, [monthReceipts]);
 
   const totalCollected = useMemo(
@@ -362,9 +361,9 @@ export default function ReportsPage() {
     });
   }, [receipts, selectedMonthLabel]);
 
-  // ── Combined arrears for the month: recorded "Pending" entries + ─
+  // ── Combined arrears for the SELECTED month: recorded "Pending" entries + ─
   // "Not Paid" (no receipt, no pending entry) flats — used for the
-  // Pending section table and the downloaded PDF.
+  // on-screen Pending section table.
   const combinedArrears = useMemo(() => {
     const pendingRows = monthPending.map((p) => ({
       id: `pending-${p.id}`,
@@ -386,6 +385,79 @@ export default function ReportsPage() {
       (a.flatNumber || '').localeCompare(b.flatNumber || '', undefined, { numeric: true })
     );
   }, [monthPending, unpaidFlats, selectedMonthLabel]);
+
+  // ── ALL months from April 2026 through the current month ──
+  // Used to build a full, all-time arrears list for the PDF (not just the selected month).
+  const allMonthsSinceStart = useMemo(() => {
+    const months = [];
+    let cursor = new Date(UNPAID_CHECK_START.getFullYear(), UNPAID_CHECK_START.getMonth(), 1);
+    const now = new Date();
+    const last = new Date(now.getFullYear(), now.getMonth(), 1);
+    while (cursor <= last) {
+      months.push(toMonthKey(cursor));
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+    return months;
+  }, []);
+
+  // "Not Paid" flats for EVERY month since April 2026 (no receipt for that billing
+  // month AND no pending entry recorded for that flat/month combination).
+  const allUnpaidRows = useMemo(() => {
+    const rows = [];
+    allMonthsSinceStart.forEach((monthLabel) => {
+      const billingPaidIds = new Set(
+        receipts.filter((r) => r.month === monthLabel).map((r) => r.flatId)
+      );
+      const pendingIdsForMonth = new Set(
+        pendingList.filter((p) => p.month === monthLabel).map((p) => p.flatId)
+      );
+      activeFlats.forEach((f) => {
+        if (!billingPaidIds.has(f.id) && !pendingIdsForMonth.has(f.id)) {
+          rows.push({
+            id: `unpaid-${f.id}-${monthLabel}`,
+            flatNumber: f.flatNumber,
+            ownerName: f.ownerName,
+            month: monthLabel,
+            amountDue: null,
+            status: 'Not Paid',
+          });
+        }
+      });
+    });
+    return rows;
+  }, [allMonthsSinceStart, receipts, pendingList, activeFlats]);
+
+  // ALL recorded pending entries (every month, not just the selected one) + every
+  // "Not Paid" row computed above. This is what gets printed in the PDF.
+  const allArrears = useMemo(() => {
+    const pendingRows = pendingList.map((p) => ({
+      id: `pending-${p.id}`,
+      flatNumber: p.flatNumber,
+      ownerName: p.ownerName,
+      month: p.month,
+      amountDue: Number(p.amountDue || 0),
+      status: 'Pending',
+    }));
+    return [...pendingRows, ...allUnpaidRows].sort((a, b) => {
+      const flatCompare = (a.flatNumber || '').localeCompare(
+        b.flatNumber || '', undefined, { numeric: true }
+      );
+      if (flatCompare !== 0) return flatCompare;
+      try {
+        return (
+          parse(a.month, 'MMMM yyyy', new Date()) -
+          parse(b.month, 'MMMM yyyy', new Date())
+        );
+      } catch {
+        return 0;
+      }
+    });
+  }, [pendingList, allUnpaidRows]);
+
+  const allArrearsTotal = useMemo(
+    () => allArrears.reduce((s, r) => s + (r.amountDue || 0), 0),
+    [allArrears]
+  );
 
   // ── Handlers ──────────────────────────────────────────────
   const handleAddPending = async (data) => {
@@ -445,20 +517,24 @@ export default function ReportsPage() {
     doc.text(`Maintenance Fees Collection Report — ${selectedMonthLabel}`, pageWidth / 2, y, { align: 'center' });
     y += 24;
 
-    // ── Paid Details table ──
+    // ── Paid Details table (sorted by receipt number) ──
     doc.setFontSize(11);
     doc.text('Paid Details', 40, y);
-    y += 8;
+    y += 20;
+
+    const sortedReceiptsByFlat = [...receiptsByFlat].sort(
+      (a, b) => (Number(a.receiptNumber) || 0) - (Number(b.receiptNumber) || 0)
+    );
 
     autoTable(doc, {
       startY: y,
-      head: [['Receipt No.', 'Date', 'Flat Number', 'Resident/Shop Name', 'Amount']],
-      body: receiptsByFlat.map((r) => [
+      head: [['Receipt No.', 'Date', 'Flat Number', 'Resident/Shop Name', 'Amount\n(in Rs.)']],
+      body: sortedReceiptsByFlat.map((r) => [
         r.receiptNumber || '—',
         formatDate(r.paymentDate),
         r.flatNumber,
         r.ownerName,
-        `Rs. ${r.total.toLocaleString('en-IN')}`,
+        r.total.toLocaleString('en-IN'),
       ]),
       foot: [['', '', '', 'Total', `Rs. ${totalCollected.toLocaleString('en-IN')}`]],
       theme: 'grid',
@@ -468,7 +544,7 @@ export default function ReportsPage() {
         fontStyle: 'bold',
         fontSize: 9,
         halign: 'center',
-        valign: 'middle',        // ← add this
+        valign: 'middle',
         lineColor: [26, 26, 46],
         lineWidth: 0.5,
       },
@@ -476,7 +552,7 @@ export default function ReportsPage() {
         fillColor: [245, 245, 245],
         textColor: [26, 26, 46],
         fontStyle: 'bold',
-        halign: 'right',         // ← add this (right-aligns all foot cells)
+        halign: 'right',
         lineColor: [220, 220, 220],
         lineWidth: 0.5,
       },
@@ -484,8 +560,7 @@ export default function ReportsPage() {
         0: { cellWidth: 55, halign: 'center' },
         1: { cellWidth: 65, halign: 'center' },
         2: { cellWidth: 65, halign: 'center' },
-        4: { halign: 'right', fontStyle: 'bold' },
-        4: { cellWidth: 70, halign: 'right', fontStyle: 'bold' },   // ← add cellWidth: 70
+        4: { cellWidth: 70, halign: 'right', fontStyle: 'bold' },
       },
       alternateRowStyles: { fillColor: [250, 250, 252] },
       styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5 },
@@ -494,30 +569,31 @@ export default function ReportsPage() {
 
     y = doc.lastAutoTable.finalY + 28;
 
-    // ── Pending / Not Paid table ──
+    // ── ALL-TIME Pending / Not Paid table (every month since Apr 2026, not just selected) ──
     if (y > doc.internal.pageSize.getHeight() - 100) {
       doc.addPage();
       y = 40;
     }
     doc.setFontSize(11);
-    doc.text('Arrears for the month', 40, y);
-    y += 8;
+    doc.text('All Outstanding Arrears (Since Apr 2026)', 40, y);
+    y += 20;
 
-    if (combinedArrears.length === 0) {
+    if (allArrears.length === 0) {
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(9);
-      doc.text(`No arrears for ${selectedMonthLabel}.`, 40, y + 14);
+      doc.text('No outstanding arrears.', 40, y + 14);
     } else {
+      const arrearsTableWidth = 330;
       autoTable(doc, {
         startY: y,
-        head: [['Flat Number', 'Resident/Shop Name', 'Month', 'Status']],
-        body: combinedArrears.map((row) => [
+        head: [['Flat Number', 'Resident/Shop Name', 'Month']],
+        body: allArrears.map((row) => [
           row.flatNumber,
           row.ownerName,
           row.month,
-          row.status,
         ]),
         theme: 'grid',
+        tableWidth: arrearsTableWidth,
         headStyles: {
           fillColor: [26, 26, 46],
           textColor: [226, 176, 74],
