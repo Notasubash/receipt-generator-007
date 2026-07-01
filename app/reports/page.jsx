@@ -578,6 +578,7 @@ export default function ReportsPage() {
           r.remarks || '—',
         ]),
         foot: [['', '', '', 'Total', `${totalCollected.toLocaleString('en-IN')}`, '']],
+        showFoot: 'lastPage',
         theme: 'grid',
         headStyles: {
           fillColor: [26, 26, 46],
