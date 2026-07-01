@@ -59,6 +59,14 @@ const FALLBACK_START_MONTH = '2026-04';
 // A flat's own tracking start month, as 'yyyy-MM'
 const flatStartMonthInput = (flat) => flat?.startMonth || FALLBACK_START_MONTH;
 
+// Converts a "MMMM yyyy" month label (e.g. from a pending entry) into a
+// 'yyyy-MM' input string for comparison against selectedMonth. Returns null
+// if it can't be parsed.
+const monthLabelToInput = (label) => {
+  try { return format(parse(label, 'MMMM yyyy', new Date()), 'yyyy-MM'); }
+  catch { return null; }
+};
+
 // ── Add Pending Modal ─────────────────────────────────────────
 function AddPendingModal({ flats, onSave, onClose }) {
   const currentMonthInput = format(new Date(), 'yyyy-MM');
@@ -392,12 +400,17 @@ export default function ReportsPage() {
   }, [monthPending, unpaidFlats, selectedMonthLabel]);
 
   // "Not Paid" flats for EVERY month, walked from EACH FLAT'S OWN startMonth
-  // through the current month (no receipt for that billing month AND no
-  // pending entry recorded for that flat/month combination).
+  // through the SELECTED month (no receipt for that billing month AND no
+  // pending entry recorded for that flat/month combination). Capped at
+  // selectedMonth so the report doesn't leak future months' arrears.
   const allUnpaidRows = useMemo(() => {
     const rows = [];
-    const now = new Date();
-    const lastMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    let lastMonthDate;
+    try {
+      lastMonthDate = parse(`${selectedMonth}-01`, 'yyyy-MM-dd', new Date());
+    } catch {
+      return rows;
+    }
 
     activeFlats.forEach((f) => {
       const startInput = flatStartMonthInput(f);
@@ -425,19 +438,25 @@ export default function ReportsPage() {
       }
     });
     return rows;
-  }, [activeFlats, receipts, pendingList]);
+  }, [activeFlats, receipts, pendingList, selectedMonth]);
 
-  // ALL recorded pending entries (every month, not just the selected one) + every
-  // "Not Paid" row computed above. This is what gets printed in the PDF.
+  // ALL recorded pending entries UP TO the selected month + every "Not Paid"
+  // row computed above (also capped at selectedMonth). This is what gets
+  // printed in the PDF, so a June report never shows July's arrears.
   const allArrears = useMemo(() => {
-    const pendingRows = pendingList.map((p) => ({
-      id: `pending-${p.id}`,
-      flatNumber: p.flatNumber,
-      ownerName: p.ownerName,
-      month: p.month,
-      amountDue: Number(p.amountDue || 0),
-      status: 'Pending',
-    }));
+    const pendingRows = pendingList
+      .filter((p) => {
+        const input = monthLabelToInput(p.month);
+        return input !== null && input <= selectedMonth;
+      })
+      .map((p) => ({
+        id: `pending-${p.id}`,
+        flatNumber: p.flatNumber,
+        ownerName: p.ownerName,
+        month: p.month,
+        amountDue: Number(p.amountDue || 0),
+        status: 'Pending',
+      }));
     return [...pendingRows, ...allUnpaidRows].sort((a, b) => {
       const flatCompare = (a.flatNumber || '').localeCompare(
         b.flatNumber || '', undefined, { numeric: true }
@@ -452,7 +471,7 @@ export default function ReportsPage() {
         return 0;
       }
     });
-  }, [pendingList, allUnpaidRows]);
+  }, [pendingList, allUnpaidRows, selectedMonth]);
 
   const allArrearsTotal = useMemo(
     () => allArrears.reduce((s, r) => s + (r.amountDue || 0), 0),
@@ -481,12 +500,16 @@ export default function ReportsPage() {
     }
   };
 
-  const handleDownloadPdf = () => {
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    const pageWidth = doc.internal.pageSize.getWidth();
+  const formatDate = (str) => {
+    if (!str) return '—';
+    try { return format(parse(str, 'yyyy-MM-dd', new Date()), 'dd MMM yyyy'); }
+    catch { return str; }
+  };
+
+  // ── PDF header helper (shared by both reports) ────────────
+  const drawPdfHeader = (doc, pageWidth, titleLine) => {
     let y = 40;
 
-    // ── Header ──
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.text(settings?.apartmentName || 'Apartment', pageWidth / 2, y, { align: 'center' });
@@ -514,10 +537,22 @@ export default function ReportsPage() {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text(`Maintenance Charges Collection Report — ${selectedMonthLabel}`, pageWidth / 2, y, { align: 'center' });
+    doc.text(titleLine, pageWidth / 2, y, { align: 'center' });
     y += 24;
 
-    // ── Paid Details table (sorted by receipt number) ──
+    return y;
+  };
+
+  // ── Paid Details PDF ───────────────────────────────────────
+  const handleDownloadPaidPdf = () => {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = drawPdfHeader(
+      doc,
+      pageWidth,
+      `Maintenance Charges Collection Report — ${selectedMonthLabel}`
+    );
+
     doc.setFontSize(11);
     doc.text('Paid Details', 40, y);
     y += 20;
@@ -526,57 +561,70 @@ export default function ReportsPage() {
       (a, b) => (Number(a.receiptNumber) || 0) - (Number(b.receiptNumber) || 0)
     );
 
-    autoTable(doc, {
-      startY: y,
-      head: [['Receipt No.', 'Date', 'Flat Number', 'Resident/Shop Name', 'Amount\n(in Rs.)', 'Remarks']],
-      body: sortedReceiptsByFlat.map((r) => [
-        r.receiptNumber || '—',
-        formatDate(r.paymentDate),
-        r.flatNumber,
-        r.ownerName,
-        r.total.toLocaleString('en-IN'),
-        r.remarks || '—',
-      ]),
-      foot: [['', '', '', 'Total', `${totalCollected.toLocaleString('en-IN')}`, '']],
-      theme: 'grid',
-      headStyles: {
-        fillColor: [26, 26, 46],
-        textColor: [226, 176, 74],
-        fontStyle: 'bold',
-        fontSize: 9,
-        halign: 'center',
-        valign: 'middle',
-        lineColor: [26, 26, 46],
-        lineWidth: 0.5,
-      },
-      footStyles: {
-        fillColor: [245, 245, 245],
-        textColor: [26, 26, 46],
-        fontStyle: 'bold',
-        halign: 'right',
-        lineColor: [220, 220, 220],
-        lineWidth: 0.5,
-      },
-      columnStyles: {
-        0: { cellWidth: 55, halign: 'center' }, // Receipt
-        1: { cellWidth: 60, halign: 'center' }, // Date
-        2: { cellWidth: 55, halign: 'center' }, // Flat
-        3: { cellWidth: 90 },                  // Resident/Shop Name (reduced)
-        4: { cellWidth: 45, halign: 'right', fontStyle: 'bold' }, // Amount
-        5: { cellWidth: 150, halign: 'left' },  // Remarks (increased)
-      },
-      alternateRowStyles: { fillColor: [250, 250, 252] },
-      styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5, valign: 'middle' },
-      margin: { left: 40, right: 40 },
-    });
-
-    y = doc.lastAutoTable.finalY + 28;
-
-    // ── ALL-TIME Pending / Not Paid table (every month since each flat's own start, not just selected) ──
-    if (y > doc.internal.pageSize.getHeight() - 100) {
-      doc.addPage();
-      y = 40;
+    if (sortedReceiptsByFlat.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.text('No receipts recorded for this month.', 40, y + 14);
+    } else {
+      autoTable(doc, {
+        startY: y,
+        head: [['Receipt No.', 'Date', 'Flat Number', 'Resident/Shop Name', 'Amount\n(in Rs.)', 'Remarks']],
+        body: sortedReceiptsByFlat.map((r) => [
+          r.receiptNumber || '—',
+          formatDate(r.paymentDate),
+          r.flatNumber,
+          r.ownerName,
+          r.total.toLocaleString('en-IN'),
+          r.remarks || '—',
+        ]),
+        foot: [['', '', '', 'Total', `${totalCollected.toLocaleString('en-IN')}`, '']],
+        theme: 'grid',
+        headStyles: {
+          fillColor: [26, 26, 46],
+          textColor: [226, 176, 74],
+          fontStyle: 'bold',
+          fontSize: 9,
+          halign: 'center',
+          valign: 'middle',
+          lineColor: [26, 26, 46],
+          lineWidth: 0.5,
+        },
+        footStyles: {
+          fillColor: [245, 245, 245],
+          textColor: [26, 26, 46],
+          fontStyle: 'bold',
+          halign: 'right',
+          lineColor: [220, 220, 220],
+          lineWidth: 0.5,
+        },
+        columnStyles: {
+          0: { cellWidth: 55, halign: 'center' }, // Receipt
+          1: { cellWidth: 60, halign: 'center' }, // Date
+          2: { cellWidth: 55, halign: 'center' }, // Flat
+          3: { cellWidth: 90 },                  // Resident/Shop Name
+          4: { cellWidth: 45, halign: 'right', fontStyle: 'bold' }, // Amount
+          5: { cellWidth: 150, halign: 'left' },  // Remarks
+        },
+        alternateRowStyles: { fillColor: [250, 250, 252] },
+        styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5, valign: 'middle' },
+        margin: { left: 40, right: 40 },
+      });
     }
+
+    const fileMonth = selectedMonthLabel.replace(/\s+/g, '_');
+    doc.save(`Paid_Report_${fileMonth}.pdf`);
+  };
+
+  // ── Arrears PDF ─────────────────────────────────────────────
+  const handleDownloadArrearsPdf = () => {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = drawPdfHeader(
+      doc,
+      pageWidth,
+      `Outstanding Arrears Report — as of ${selectedMonthLabel}`
+    );
+
     doc.setFontSize(11);
     doc.text('All Outstanding Arrears', 40, y);
     y += 20;
@@ -616,13 +664,7 @@ export default function ReportsPage() {
     }
 
     const fileMonth = selectedMonthLabel.replace(/\s+/g, '_');
-    doc.save(`Maintenance_Report_${fileMonth}.pdf`);
-  };
-
-  const formatDate = (str) => {
-    if (!str) return '—';
-    try { return format(parse(str, 'yyyy-MM-dd', new Date()), 'dd MMM yyyy'); }
-    catch { return str; }
+    doc.save(`Arrears_Report_${fileMonth}.pdf`);
   };
 
   // The "Not Paid" section is relevant for the selected month as long as at
@@ -658,12 +700,18 @@ export default function ReportsPage() {
                   Month-wise collection &amp; pending overview
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={handleDownloadPdf}
+                  onClick={handleDownloadPaidPdf}
                   className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border border-gray-200 text-[#1a1a2e] rounded-xl hover:bg-gray-50 transition-colors"
                 >
-                  <Download size={15} /> Download PDF
+                  <Download size={15} /> Paid Report
+                </button>
+                <button
+                  onClick={handleDownloadArrearsPdf}
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border border-orange-200 text-orange-600 rounded-xl hover:bg-orange-50 transition-colors"
+                >
+                  <Download size={15} /> Arrears Report
                 </button>
                 <div className="relative">
                   <input
