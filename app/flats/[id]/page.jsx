@@ -609,6 +609,13 @@ export default function FlatDetailPage() {
 
             {/* Stats row */}
             <div className="px-4 sm:px-6 py-4 flex flex-wrap gap-4 sm:gap-6 border-b border-gray-50">
+              {flat.monthlyAmount ? (
+                <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                  <IndianRupee size={14} className="text-gray-400" />
+                  <span>Monthly Amount:</span>
+                  <span className="font-semibold text-[#1a1a2e]">{currency}{Number(flat.monthlyAmount).toLocaleString('en-IN')}</span>
+                </div>
+              ) : null}
               <div className="flex items-center gap-1.5 text-sm text-gray-600">
                 <IndianRupee size={14} className="text-gray-400" />
                 <span>Total Paid:</span>
@@ -894,6 +901,14 @@ export default function FlatDetailPage() {
                 <option value="tenant">Tenant</option>
               </Select>
             </div>
+            <Input
+              label="Monthly Amount"
+              type="number"
+              min="0"
+              value={form.monthlyAmount || ''}
+              onChange={(e) => set('monthlyAmount', e.target.value)}
+              placeholder="1500"
+            />
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Update'}</Button>

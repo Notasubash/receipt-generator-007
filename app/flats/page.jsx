@@ -23,7 +23,8 @@ const currentMonthInput = () => {
 const EMPTY_FLAT = {
   flatNumber: '', ownerName: '',
   floor: '', type: '', ownershipType: 'owner', notes: '', status: 'active',
-  startMonth: '', // 'yyyy-MM' — the billing month this flat starts being tracked for "Not Paid"
+  startMonth: '', monthlyAmount: '', // ← new
+  // 'yyyy-MM' — the billing month this flat starts being tracked for "Not Paid"
 };
 
 const FLAT_TYPES = ['1BHK', '2BHK', '3BHK', '4BHK', 'Commercial'];
@@ -146,8 +147,8 @@ export default function FlatsPage() {
               <button
                 onClick={() => setShowInactive((v) => !v)}
                 className={`flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-sm font-medium rounded-xl border transition-colors whitespace-nowrap ${showInactive
-                    ? 'bg-[#1a1a2e] text-[#e2b04a] border-[#1a1a2e]'
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                  ? 'bg-[#1a1a2e] text-[#e2b04a] border-[#1a1a2e]'
+                  : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
                   }`}
               >
                 {showInactive ? <Eye size={15} /> : <EyeOff size={15} />}
@@ -210,6 +211,9 @@ export default function FlatsPage() {
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           {flat.type && <Badge color="gray" className="text-[10px]">{flat.type}</Badge>}
                           {flat.floor && <span className="text-xs text-gray-400">Floor {flat.floor}</span>}
+                          {flat.monthlyAmount ? (
+                            <span className="text-xs font-semibold text-[#b8861f]">₹{Number(flat.monthlyAmount).toLocaleString('en-IN')}/mo</span>
+                          ) : null}
                           {flat.notes && (
                             <span className="text-xs text-gray-400 truncate max-w-[140px]">{flat.notes}</span>
                           )}
@@ -221,8 +225,8 @@ export default function FlatsPage() {
                         <button
                           onClick={() => handleToggleStatus(flat)}
                           className={`p-2 rounded-lg transition-colors ${active
-                              ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'
-                              : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+                            ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'
+                            : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
                             }`}
                           aria-label={active ? 'Mark inactive' : 'Mark active'}
                           title={active ? 'Mark inactive' : 'Mark active'}
@@ -265,6 +269,7 @@ export default function FlatsPage() {
                         <th className="text-left px-6 py-3">Owner</th>
                         <th className="text-left px-6 py-3">Type</th>
                         <th className="text-left px-6 py-3">Floor</th>
+                        <th className="text-left px-6 py-3">Monthly Amount</th>
                         <th className="text-left px-6 py-3">Ownership</th>
                         <th className="text-left px-6 py-3">Status</th>
                         <th className="text-right px-6 py-3">Actions</th>
@@ -294,6 +299,9 @@ export default function FlatsPage() {
                             <td className="px-6 py-3.5 text-gray-500">
                               {flat.floor ? `Floor ${flat.floor}` : <span className="text-gray-300">—</span>}
                             </td>
+                            <td className="px-6 py-3.5 font-medium text-[#1a1a2e]">
+                              {flat.monthlyAmount ? `₹${Number(flat.monthlyAmount).toLocaleString('en-IN')}` : <span className="text-gray-300">—</span>}
+                            </td>
                             <td className="px-6 py-3.5">
                               <Badge color={flat.ownershipType === 'owner' ? 'gold' : 'blue'}>
                                 {flat.ownershipType === 'owner' ? 'Owner' : 'Tenant'}
@@ -311,8 +319,8 @@ export default function FlatsPage() {
                                 <button
                                   onClick={() => handleToggleStatus(flat)}
                                   className={`p-1.5 rounded-lg transition-colors ${active
-                                      ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'
-                                      : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+                                    ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'
+                                    : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
                                     }`}
                                   title={active ? 'Mark inactive' : 'Mark active'}
                                 >
@@ -384,6 +392,14 @@ export default function FlatsPage() {
                 <option value="tenant">Tenant</option>
               </Select>
             </div>
+            <Input
+              label="Monthly Amount"
+              type="number"
+              min="0"
+              value={form.monthlyAmount}
+              onChange={(e) => set('monthlyAmount', e.target.value)}
+              placeholder="1500"
+            />
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-[#555577] uppercase tracking-wide">
@@ -418,7 +434,7 @@ export default function FlatsPage() {
                 placeholder="Optional notes..."
               />
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+            <div clasasName="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={saving}>
                 {saving ? 'Saving...' : editFlat ? 'Update Flat' : 'Add Flat'}

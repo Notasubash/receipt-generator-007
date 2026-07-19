@@ -391,7 +391,7 @@ export default function ReportsPage() {
       flatNumber: f.flatNumber,
       ownerName: f.ownerName,
       month: selectedMonthLabel,
-      amountDue: null,
+      amountDue: Number(f.monthlyAmount || 0), // ← was null
       status: 'Not Paid',
     }));
     return [...pendingRows, ...unpaidRows].sort((a, b) =>
@@ -430,7 +430,7 @@ export default function ReportsPage() {
             flatNumber: f.flatNumber,
             ownerName: f.ownerName,
             month: monthLabel,
-            amountDue: null,
+            amountDue: Number(f.monthlyAmount || 0), // ← was null
             status: 'Not Paid',
           });
         }
@@ -489,6 +489,29 @@ export default function ReportsPage() {
       toast.error('Failed to add');
     }
   };
+
+  const handleConvertToPending = async (flat) => {
+    if (!flat.monthlyAmount) {
+      toast.error(`Set a monthly amount for ${flat.flatNumber} first`);
+      return;
+    }
+    try {
+      await addPendingFlat({
+        flatId: flat.id,
+        flatNumber: flat.flatNumber,
+        ownerName: flat.ownerName,
+        month: selectedMonthLabel,
+        amountDue: Number(flat.monthlyAmount),
+        notes: '',
+      });
+      toast.success(`${flat.flatNumber} moved to pending`);
+      await load();
+    } catch (err) {
+      console.error('convertToPending error:', err);
+      toast.error('Failed to convert to pending');
+    }
+  };
+
 
   const handleDeletePending = async (pendingId) => {
     try {
@@ -635,17 +658,57 @@ export default function ReportsPage() {
       doc.setFontSize(9);
       doc.text('No outstanding arrears.', 40, y + 14);
     } else {
-      const arrearsTableWidth = 330;
+      // ── Group rows by flat ──
+      const byFlat = new Map();
+      allArrears.forEach((row) => {
+        const key = row.flatNumber || '—';
+        if (!byFlat.has(key)) {
+          byFlat.set(key, { ownerName: row.ownerName, rows: [], subtotal: 0 });
+        }
+        const g = byFlat.get(key);
+        g.rows.push(row);
+        g.subtotal += Number(row.amountDue || 0);
+      });
+
+      const flatKeys = Array.from(byFlat.keys()).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true })
+      );
+
+      const body = [];
+      flatKeys.forEach((flatNumber) => {
+        const g = byFlat.get(flatNumber);
+        g.rows.forEach((row, i) => {
+          body.push([
+            i === 0 ? flatNumber : '',
+            i === 0 ? g.ownerName : '',
+            row.month,
+            row.status,
+            (row.amountDue ?? 0).toLocaleString('en-IN'),
+          ]);
+        });
+        body.push([
+          {
+            content: `Subtotal — Flat ${flatNumber}`,
+            colSpan: 4,
+            styles: { halign: 'right', fontStyle: 'bold', fillColor: [253, 240, 213], textColor: [184, 134, 31] },
+          },
+          {
+            content: g.subtotal.toLocaleString('en-IN'),
+            styles: { halign: 'right', fontStyle: 'bold', fillColor: [253, 240, 213], textColor: [184, 134, 31] },
+          },
+        ]);
+      });
+
       autoTable(doc, {
         startY: y,
-        head: [['Flat Number', 'Resident/Shop Name', 'Month']],
-        body: allArrears.map((row) => [
-          row.flatNumber,
-          row.ownerName,
-          row.month,
-        ]),
+        head: [['Flat Number', 'Resident/Shop Name', 'Month', 'Status', 'Amount\n(in Rs.)']],
+        body,
+        foot: [[
+          { content: 'Grand Total', colSpan: 4, styles: { halign: 'right' } },
+          { content: allArrearsTotal.toLocaleString('en-IN'), styles: { halign: 'right' } },
+        ]],
+        showFoot: 'lastPage',
         theme: 'grid',
-        tableWidth: arrearsTableWidth,
         headStyles: {
           fillColor: [26, 26, 46],
           textColor: [226, 176, 74],
@@ -655,11 +718,23 @@ export default function ReportsPage() {
           lineColor: [26, 26, 46],
           lineWidth: 0.5,
         },
+        footStyles: {
+          fillColor: [26, 26, 46],
+          textColor: [226, 176, 74],
+          fontStyle: 'bold',
+          fontSize: 10,
+          lineColor: [26, 26, 46],
+          lineWidth: 0.5,
+        },
         columnStyles: {
-          0: { cellWidth: 65, halign: 'center' },
+          0: { cellWidth: 70, halign: 'center' },
+          1: { cellWidth: 130 },
+          2: { cellWidth: 85, halign: 'center' },
+          3: { cellWidth: 65, halign: 'center' },
+          4: { cellWidth: 75, halign: 'right', fontStyle: 'bold' },
         },
         alternateRowStyles: { fillColor: [250, 250, 252] },
-        styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5 },
+        styles: { fontSize: 9, cellPadding: 5, lineColor: [225, 225, 230], lineWidth: 0.5, valign: 'middle' },
         margin: { left: 40, right: 40 },
       });
     }
@@ -1029,9 +1104,20 @@ export default function ReportsPage() {
                             </p>
                           </div>
                         </div>
-                        <span className="text-xs text-red-400 font-medium italic shrink-0">
-                          Unaccounted
-                        </span>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {f.monthlyAmount ? (
+                            <span className="text-sm font-bold text-red-500">
+                              {currency}{Number(f.monthlyAmount).toLocaleString('en-IN')}
+                            </span>
+                          ) : null}
+                          <button
+                            onClick={() => handleConvertToPending(f)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-orange-50 text-orange-600 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors whitespace-nowrap"
+                            title="Move to Pending"
+                          >
+                            <Clock size={12} /> To Pending
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
